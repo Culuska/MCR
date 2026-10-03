@@ -1,0 +1,1013 @@
+// MCR Construction ERP — Phase 1: finance core.
+// Money is Decimal(14,2). Financial rows are never deleted: they are voided or reversed.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  SUPER_ADMIN
+  FINANCE_MANAGER
+  PROJECT_MANAGER
+  SITE_SUPERVISOR
+  ACCOUNTANT
+  HR
+  STOREKEEPER
+  VIEWER
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+enum ExpenseCategory {
+  WAGES
+  FUEL
+  EQUIPMENT_RENTAL
+  TRUCK_RENTAL
+  EQUIPMENT_MAINTENANCE
+  VEHICLE_MAINTENANCE
+  MATERIALS
+  TOOLS
+  TRANSPORTATION
+  SITE_ACCOMMODATION
+  OFFICE_RENT
+  WAREHOUSE_RENT
+  UTILITIES
+  COMMUNICATION
+  SUBCONTRACTORS
+  PERMITS
+  INSURANCE
+  SITE_MEALS
+  STOCK_PURCHASE // a supplier bill for stock received; not a cost until the stock is used
+  OTHER
+}
+
+enum ExpenseStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  PAID
+  VOID
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIAL
+  PAID
+  VOID
+}
+
+enum PaymentKind {
+  RECEIPT // money in from a customer
+  DISBURSEMENT // money out against an expense
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  EVC_PLUS
+  EDAHAB
+  SAHAL
+  CHEQUE
+}
+
+enum JournalStatus {
+  POSTED
+  REVERSED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(VIEWER)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  managedProjects  Project[]      @relation("ProjectManager")
+  expensesCreated  Expense[]      @relation("ExpenseCreatedBy")
+  expensesApproved Expense[]      @relation("ExpenseApprovedBy")
+  journals         JournalEntry[]
+  auditLogs        AuditLog[]
+}
+
+model Customer {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  type      String? // Government, NGO / UN agency, Private company, Individual
+  contact   String?
+  phone     String?
+  email     String?
+  address   String?
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  projects  Project[]
+  invoices  Invoice[]
+}
+
+model Supplier {
+  id             String          @id @default(cuid())
+  name           String          @unique
+  contact        String?
+  phone          String?
+  email          String?
+  address        String?
+  paymentTerms   String?
+  active         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  expenses       Expense[]
+  rentals        Rental[]
+  purchaseOrders PurchaseOrder[]
+  subcontracts   Subcontract[]
+}
+
+model Project {
+  id            String        @id @default(cuid())
+  code          String        @unique
+  name          String
+  customerId    String?
+  location      String?
+  contractValue Decimal       @default(0) @db.Decimal(14, 2)
+  startDate     DateTime?
+  expectedEnd   DateTime?
+  actualEnd     DateTime?
+  managerId     String?
+  status        ProjectStatus @default(PLANNING)
+  progress      Int           @default(0)
+  createdAt     DateTime      @default(now())
+
+  customer         Customer?           @relation(fields: [customerId], references: [id])
+  manager          User?               @relation("ProjectManager", fields: [managerId], references: [id])
+  budget           BudgetLine[]
+  expenses         Expense[]
+  invoices         Invoice[]
+  lines            JournalLine[]
+  attendance       Attendance[]
+  payAllocations   PayrollAllocation[]
+  assetAssignments AssetAssignment[]
+  assetUsages      AssetUsage[]
+  rentals          Rental[]
+  purchaseOrders   PurchaseOrder[]
+  stockMovements   StockMovement[]
+  subcontracts     Subcontract[]
+  tasks            Task[]
+  siteReports      SiteReport[]
+  siteIssues       SiteIssue[]
+}
+
+model BudgetLine {
+  id        String          @id @default(cuid())
+  projectId String
+  category  ExpenseCategory
+  amount    Decimal         @db.Decimal(14, 2)
+  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, category])
+}
+
+model Account {
+  id       String      @id @default(cuid())
+  code     String      @unique
+  name     String
+  type     AccountType
+  isCash   Boolean     @default(false) // cash or bank: appears in cash flow and payment pickers
+  isSystem Boolean     @default(false) // referenced by posting rules, cannot be renamed away
+  active   Boolean     @default(true)
+
+  lines    JournalLine[]
+  expenses Expense[]
+  payments Payment[]
+  advances Advance[]
+}
+
+model JournalEntry {
+  id          String        @id @default(cuid())
+  number      String        @unique
+  date        DateTime
+  description String
+  reference   String?
+  sourceType  String? // EXPENSE, INVOICE, PAYMENT, MANUAL, REVERSAL
+  sourceId    String?
+  status      JournalStatus @default(POSTED)
+  reversesId  String?       @unique
+  createdById String
+  createdAt   DateTime      @default(now())
+
+  createdBy  User          @relation(fields: [createdById], references: [id])
+  reverses   JournalEntry? @relation("Reversal", fields: [reversesId], references: [id])
+  reversedBy JournalEntry? @relation("Reversal")
+  lines      JournalLine[]
+
+  @@index([sourceType, sourceId])
+  @@index([date])
+}
+
+model JournalLine {
+  id        String  @id @default(cuid())
+  entryId   String
+  accountId String
+  projectId String?
+  debit     Decimal @default(0) @db.Decimal(14, 2)
+  credit    Decimal @default(0) @db.Decimal(14, 2)
+  memo      String?
+
+  entry   JournalEntry @relation(fields: [entryId], references: [id])
+  account Account      @relation(fields: [accountId], references: [id])
+  project Project?     @relation(fields: [projectId], references: [id])
+
+  @@index([accountId])
+  @@index([projectId])
+}
+
+model Expense {
+  id            String          @id @default(cuid())
+  number        String          @unique
+  date          DateTime
+  projectId     String? // null = company overhead
+  category      ExpenseCategory
+  supplierId    String?
+  payee         String?
+  description   String
+  amount        Decimal         @db.Decimal(14, 2)
+  paymentMethod PaymentMethod?
+  accountId     String // expense account the cost is booked to
+  status        ExpenseStatus   @default(DRAFT)
+  notes         String?
+  receiptUrl    String?
+  createdById   String
+  approvedById  String?
+  approvedAt    DateTime?
+  paidAt        DateTime?
+  createdAt     DateTime        @default(now())
+
+  project           Project?           @relation(fields: [projectId], references: [id])
+  supplier          Supplier?          @relation(fields: [supplierId], references: [id])
+  account           Account            @relation(fields: [accountId], references: [id])
+  createdBy         User               @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  approvedBy        User?              @relation("ExpenseApprovedBy", fields: [approvedById], references: [id])
+  payments          Payment[]
+  asset             Asset?             @relation(fields: [assetId], references: [id])
+  assetId           String?
+  rental            Rental?
+  maintenanceRecord MaintenanceRecord?
+  goodsReceipt      GoodsReceipt?
+  task              Task?              @relation(fields: [taskId], references: [id])
+  taskId            String?
+
+  @@index([projectId, status])
+  @@index([date])
+}
+
+model Invoice {
+  id         String        @id @default(cuid())
+  number     String        @unique
+  customerId String
+  projectId  String
+  issueDate  DateTime
+  dueDate    DateTime
+  amount     Decimal       @db.Decimal(14, 2)
+  status     InvoiceStatus @default(DRAFT)
+  notes      String?
+  createdAt  DateTime      @default(now())
+
+  customer Customer  @relation(fields: [customerId], references: [id])
+  project  Project   @relation(fields: [projectId], references: [id])
+  payments Payment[]
+
+  @@index([status, dueDate])
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  number    String        @unique
+  kind      PaymentKind
+  date      DateTime
+  amount    Decimal       @db.Decimal(14, 2)
+  method    PaymentMethod
+  reference String?
+  accountId String // cash or bank account the money moved through
+  invoiceId String?
+  expenseId String?
+  voided    Boolean       @default(false)
+  createdAt DateTime      @default(now())
+
+  account Account  @relation(fields: [accountId], references: [id])
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  expense Expense? @relation(fields: [expenseId], references: [id])
+
+  @@index([invoiceId])
+  @@index([expenseId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String // e.g. "expense.approve", "project.budget.update"
+  entity    String
+  entityId  String
+  summary   String // human sentence: "Ali approved EXP-00234 for $2,500"
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+model Sequence {
+  key   String @id // e.g. "EXP", "INV", "JE"
+  value Int    @default(0)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: workforce and payroll
+// ---------------------------------------------------------------------------
+
+enum PayType {
+  DAILY // paid a daily wage for each day worked
+  MONTHLY // paid a monthly salary, pro-rated from attendance
+}
+
+enum AttendanceStatus {
+  PRESENT
+  HALF_DAY
+  ABSENT
+  LEAVE
+}
+
+enum PayrollStatus {
+  DRAFT
+  APPROVED
+  PAID
+  VOID
+}
+
+model Employee {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  name           String
+  phone          String?
+  position       String
+  department     String?
+  payType        PayType  @default(DAILY)
+  rate           Decimal  @db.Decimal(12, 2) // daily wage, or monthly salary
+  overtimeRate   Decimal  @default(0) @db.Decimal(10, 2) // per overtime hour
+  paymentDetails String? // bank or mobile money number
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  attendance Attendance[]
+  lines      PayrollLine[]
+  advances   Advance[]
+  tasks      Task[]
+}
+
+model Attendance {
+  id            String           @id @default(cuid())
+  employeeId    String
+  date          DateTime         @db.Date
+  projectId     String? // null = office or yard, charged to overhead
+  status        AttendanceStatus
+  overtimeHours Decimal          @default(0) @db.Decimal(4, 1)
+  note          String?
+  recordedById  String
+  createdAt     DateTime         @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+  project  Project? @relation(fields: [projectId], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([date])
+  @@index([projectId])
+}
+
+model Advance {
+  id          String   @id @default(cuid())
+  number      String   @unique
+  employeeId  String
+  date        DateTime @db.Date
+  amount      Decimal  @db.Decimal(12, 2)
+  accountId   String // cash or bank account it was paid from
+  note        String?
+  voided      Boolean  @default(false)
+  createdById String
+  createdAt   DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+  account  Account  @relation(fields: [accountId], references: [id])
+}
+
+model PayrollRun {
+  id           String         @id @default(cuid())
+  number       String         @unique
+  periodStart  DateTime       @db.Date
+  periodEnd    DateTime       @db.Date
+  status       PayrollStatus  @default(DRAFT)
+  notes        String?
+  createdById  String
+  approvedById String?
+  approvedAt   DateTime?
+  paidAt       DateTime?
+  payAccountId String?
+  payMethod    PaymentMethod?
+  payReference String?
+  createdAt    DateTime       @default(now())
+
+  lines PayrollLine[]
+
+  @@index([status])
+}
+
+model PayrollLine {
+  id               String  @id @default(cuid())
+  runId            String
+  employeeId       String
+  paidDays         Decimal @db.Decimal(6, 1)
+  overtimeHours    Decimal @db.Decimal(6, 1)
+  basePay          Decimal @db.Decimal(12, 2)
+  overtimePay      Decimal @db.Decimal(12, 2)
+  bonus            Decimal @default(0) @db.Decimal(12, 2)
+  deductions       Decimal @default(0) @db.Decimal(12, 2)
+  advanceRecovered Decimal @default(0) @db.Decimal(12, 2)
+  gross            Decimal @db.Decimal(12, 2)
+  net              Decimal @db.Decimal(12, 2)
+
+  run         PayrollRun          @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employee    Employee            @relation(fields: [employeeId], references: [id])
+  allocations PayrollAllocation[]
+
+  @@unique([runId, employeeId])
+}
+
+// Which project each pay line's cost belongs to. Null project = company overhead.
+model PayrollAllocation {
+  id        String  @id @default(cuid())
+  lineId    String
+  projectId String?
+  amount    Decimal @db.Decimal(12, 2)
+
+  line    PayrollLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  project Project?    @relation(fields: [projectId], references: [id])
+
+  @@index([projectId])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: equipment, vehicles and rentals
+// Costs (hire, fuel, repairs) are ordinary expenses tagged with an asset, so they
+// go through the same approval and ledger as every other cost.
+// ---------------------------------------------------------------------------
+
+enum AssetKind {
+  EQUIPMENT
+  VEHICLE
+}
+
+enum AssetStatus {
+  AVAILABLE
+  IN_USE
+  UNDER_REPAIR
+  RETIRED
+}
+
+enum Ownership {
+  OWNED
+  HIRED
+}
+
+enum RentalRate {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum RentalStatus {
+  ACTIVE
+  ENDED
+  CANCELLED
+}
+
+enum MaintenanceKind {
+  SERVICE
+  REPAIR
+}
+
+model Asset {
+  id              String      @id @default(cuid())
+  code            String      @unique
+  name            String
+  kind            AssetKind
+  type            String // Excavator, Tipper truck, Generator...
+  registration    String? // plate number, for vehicles
+  ownership       Ownership   @default(OWNED)
+  purchasePrice   Decimal?    @db.Decimal(14, 2)
+  fuelType        String?
+  driver          String? // usual driver or operator
+  status          AssetStatus @default(AVAILABLE)
+  insuranceExpiry DateTime?   @db.Date
+  nextServiceDate DateTime?   @db.Date
+  notes           String?
+  active          Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+
+  assignments AssetAssignment[]
+  usage       AssetUsage[]
+  rentals     Rental[]
+  maintenance MaintenanceRecord[]
+  expenses    Expense[]
+}
+
+// Which project an asset is working on, and when. Two assignments of one asset never overlap.
+model AssetAssignment {
+  id          String    @id @default(cuid())
+  assetId     String
+  projectId   String
+  startDate   DateTime  @db.Date
+  endDate     DateTime? @db.Date // null = still there
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  asset   Asset   @relation(fields: [assetId], references: [id])
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([assetId, startDate])
+}
+
+// One day's work for one asset. Readings are engine hours for equipment and kilometres for vehicles.
+model AssetUsage {
+  id           String   @id @default(cuid())
+  assetId      String
+  date         DateTime @db.Date
+  projectId    String?
+  operator     String?
+  startReading Decimal  @db.Decimal(10, 1)
+  endReading   Decimal  @db.Decimal(10, 1)
+  units        Decimal  @db.Decimal(10, 1) // end minus start
+  trips        Int      @default(0)
+  fuelLitres   Decimal  @default(0) @db.Decimal(8, 1)
+  purpose      String?
+  recordedById String
+  createdAt    DateTime @default(now())
+
+  asset   Asset    @relation(fields: [assetId], references: [id])
+  project Project? @relation(fields: [projectId], references: [id])
+
+  @@index([assetId, date])
+  @@index([projectId])
+}
+
+model Rental {
+  id           String       @id @default(cuid())
+  number       String       @unique
+  assetId      String
+  supplierId   String
+  projectId    String?
+  startDate    DateTime     @db.Date
+  endDate      DateTime     @db.Date
+  rateType     RentalRate
+  rate         Decimal      @db.Decimal(12, 2)
+  deposit      Decimal      @default(0) @db.Decimal(12, 2)
+  extraCharges Decimal      @default(0) @db.Decimal(12, 2)
+  total        Decimal      @db.Decimal(12, 2) // hire cost plus extra charges; the deposit is held separately
+  status       RentalStatus @default(ACTIVE)
+  expenseId    String?      @unique
+  notes        String?
+  createdById  String
+  createdAt    DateTime     @default(now())
+
+  asset    Asset    @relation(fields: [assetId], references: [id])
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+  project  Project? @relation(fields: [projectId], references: [id])
+  expense  Expense? @relation(fields: [expenseId], references: [id])
+
+  @@index([assetId, startDate])
+}
+
+model MaintenanceRecord {
+  id              String          @id @default(cuid())
+  assetId         String
+  date            DateTime        @db.Date
+  kind            MaintenanceKind
+  description     String
+  cost            Decimal         @default(0) @db.Decimal(12, 2)
+  nextServiceDate DateTime?       @db.Date
+  expenseId       String?         @unique
+  createdById     String
+  createdAt       DateTime        @default(now())
+
+  asset   Asset    @relation(fields: [assetId], references: [id])
+  expense Expense? @relation(fields: [expenseId], references: [id])
+
+  @@index([assetId, date])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: materials, stock and purchasing
+// Buying stock puts value into Inventory (an asset). It becomes a project cost only when the
+// material is issued to a project, at the weighted-average cost.
+// ---------------------------------------------------------------------------
+
+enum PoStatus {
+  DRAFT
+  ORDERED
+  PART_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum MovementType {
+  OPENING
+  RECEIPT
+  ISSUE
+  ADJUSTMENT
+}
+
+model Material {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  category     String // Cement, Sand and gravel, Steel...
+  unit         String // bag, tonne, m3, piece...
+  reorderLevel Decimal  @default(0) @db.Decimal(14, 3)
+  onHand       Decimal  @default(0) @db.Decimal(14, 3)
+  avgCost      Decimal  @default(0) @db.Decimal(14, 4) // weighted average cost per unit
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  movements StockMovement[]
+  poLines   PoLine[]
+  receipts  ReceiptLine[]
+}
+
+model PurchaseOrder {
+  id           String    @id @default(cuid())
+  number       String    @unique
+  supplierId   String
+  projectId    String? // the project the order is mainly for, for reference
+  orderDate    DateTime  @db.Date
+  expectedDate DateTime? @db.Date
+  status       PoStatus  @default(DRAFT)
+  notes        String?
+  createdById  String
+  createdAt    DateTime  @default(now())
+
+  supplier Supplier       @relation(fields: [supplierId], references: [id])
+  project  Project?       @relation(fields: [projectId], references: [id])
+  lines    PoLine[]
+  receipts GoodsReceipt[]
+
+  @@index([status])
+}
+
+model PoLine {
+  id         String  @id @default(cuid())
+  orderId    String
+  materialId String
+  quantity   Decimal @db.Decimal(14, 3)
+  unitPrice  Decimal @db.Decimal(14, 4)
+  received   Decimal @default(0) @db.Decimal(14, 3)
+
+  order    PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  material Material      @relation(fields: [materialId], references: [id])
+
+  @@unique([orderId, materialId])
+}
+
+model GoodsReceipt {
+  id            String   @id @default(cuid())
+  number        String   @unique
+  orderId       String
+  receivedDate  DateTime @db.Date
+  invoiceNumber String // the supplier's invoice number
+  expenseId     String?  @unique // the draft supplier bill raised for this delivery
+  reversed      Boolean  @default(false)
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  order     PurchaseOrder   @relation(fields: [orderId], references: [id])
+  expense   Expense?        @relation(fields: [expenseId], references: [id])
+  lines     ReceiptLine[]
+  movements StockMovement[]
+}
+
+model ReceiptLine {
+  id         String  @id @default(cuid())
+  receiptId  String
+  materialId String
+  quantity   Decimal @db.Decimal(14, 3)
+  unitPrice  Decimal @db.Decimal(14, 4)
+
+  receipt  GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  material Material     @relation(fields: [materialId], references: [id])
+}
+
+model StockMovement {
+  id          String       @id @default(cuid())
+  materialId  String
+  date        DateTime     @db.Date
+  type        MovementType
+  quantity    Decimal      @db.Decimal(14, 3) // positive = in, negative = out
+  unitCost    Decimal      @db.Decimal(14, 4)
+  value       Decimal      @db.Decimal(14, 2) // absolute value of the movement
+  projectId   String? // for issues: the project that bears the cost
+  receiptId   String?
+  reference   String?
+  note        String?
+  voided      Boolean      @default(false)
+  createdById String
+  createdAt   DateTime     @default(now())
+
+  material Material      @relation(fields: [materialId], references: [id])
+  project  Project?      @relation(fields: [projectId], references: [id])
+  receipt  GoodsReceipt? @relation(fields: [receiptId], references: [id])
+
+  @@index([materialId, date])
+  @@index([projectId])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5: subcontractors
+// A subcontractor is a Supplier. Work is paid through payment certificates: each states the value of
+// work done to date, the system works out this certificate's share, withholds retention, and posts
+// the full cost to the project with the retention held as a liability until it is released.
+// ---------------------------------------------------------------------------
+
+enum SubStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum CertStatus {
+  DRAFT
+  APPROVED
+  PAID
+  VOID
+}
+
+model Subcontract {
+  id            String    @id @default(cuid())
+  number        String    @unique
+  supplierId    String
+  projectId     String
+  scope         String
+  contractValue Decimal   @db.Decimal(14, 2)
+  retentionPct  Decimal   @default(5) @db.Decimal(5, 2)
+  status        SubStatus @default(DRAFT)
+  startDate     DateTime? @db.Date
+  endDate       DateTime? @db.Date
+  notes         String?
+  createdById   String
+  createdAt     DateTime  @default(now())
+
+  supplier     Supplier           @relation(fields: [supplierId], references: [id])
+  project      Project            @relation(fields: [projectId], references: [id])
+  variations   SubVariation[]
+  certificates SubCertificate[]
+  schedule     SubScheduleItem[]
+  releases     RetentionRelease[]
+
+  @@index([projectId])
+  @@index([supplierId])
+}
+
+// A change to the contract value: extra work (positive) or omitted work (negative). Counts once approved.
+model SubVariation {
+  id            String   @id @default(cuid())
+  subcontractId String
+  description   String
+  amount        Decimal  @db.Decimal(14, 2)
+  approved      Boolean  @default(false)
+  approvedById  String?
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  subcontract Subcontract @relation(fields: [subcontractId], references: [id], onDelete: Cascade)
+}
+
+model SubCertificate {
+  id            String         @id @default(cuid())
+  number        String         @unique
+  subcontractId String
+  seq           Int
+  date          DateTime       @db.Date
+  workToDate    Decimal        @db.Decimal(14, 2) // cumulative value of work certified, including this certificate
+  gross         Decimal        @db.Decimal(14, 2) // value of work in this certificate
+  retention     Decimal        @db.Decimal(14, 2) // withheld from this certificate
+  net           Decimal        @db.Decimal(14, 2) // payable now
+  status        CertStatus     @default(DRAFT)
+  notes         String?
+  createdById   String
+  approvedById  String?
+  approvedAt    DateTime?
+  paidAt        DateTime?
+  payAccountId  String?
+  payMethod     PaymentMethod?
+  payReference  String?
+  createdAt     DateTime       @default(now())
+
+  subcontract Subcontract @relation(fields: [subcontractId], references: [id])
+
+  @@unique([subcontractId, seq])
+}
+
+model RetentionRelease {
+  id            String        @id @default(cuid())
+  number        String        @unique
+  subcontractId String
+  date          DateTime      @db.Date
+  amount        Decimal       @db.Decimal(14, 2)
+  accountId     String
+  method        PaymentMethod
+  reference     String?
+  voided        Boolean       @default(false)
+  createdById   String
+  createdAt     DateTime      @default(now())
+
+  subcontract Subcontract @relation(fields: [subcontractId], references: [id])
+}
+
+// The planned payment programme: what the contract expects to have been certified by when.
+model SubScheduleItem {
+  id            String   @id @default(cuid())
+  subcontractId String
+  description   String
+  amount        Decimal  @db.Decimal(14, 2)
+  dueDate       DateTime @db.Date
+
+  subcontract Subcontract @relation(fields: [subcontractId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6: site operations
+// Tasks, daily site reports and delays. A report does not retype what other modules already know:
+// workers on site, machines running, material used and money spent are read from attendance,
+// the equipment log, stock issues and expenses for that project and day.
+// ---------------------------------------------------------------------------
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum IssueKind {
+  DELAY
+  SAFETY
+  MATERIAL_SHORTAGE
+  EQUIPMENT_BREAKDOWN
+  WEATHER
+  DESIGN_QUERY
+  OTHER
+}
+
+model Task {
+  id            String     @id @default(cuid())
+  number        String     @unique
+  projectId     String
+  title         String
+  description   String?
+  assigneeId    String? // an employee, usually the foreman or engineer
+  startDate     DateTime?  @db.Date
+  dueDate       DateTime   @db.Date
+  priority      Priority   @default(MEDIUM)
+  status        TaskStatus @default(TODO)
+  completion    Int        @default(0)
+  estimatedCost Decimal?   @db.Decimal(14, 2)
+  notes         String?
+  completedAt   DateTime?
+  createdById   String
+  createdAt     DateTime   @default(now())
+
+  project  Project            @relation(fields: [projectId], references: [id])
+  assignee Employee?          @relation(fields: [assigneeId], references: [id])
+  updates  ReportTaskUpdate[]
+  issues   SiteIssue[]
+  expenses Expense[]
+
+  @@index([projectId, status])
+  @@index([dueDate])
+}
+
+// One report per project per working day.
+model SiteReport {
+  id           String   @id @default(cuid())
+  projectId    String
+  date         DateTime @db.Date
+  weather      String?
+  workDone     String // what was achieved today
+  planNext     String? // what is planned for tomorrow
+  notes        String?
+  status       String   @default("SUBMITTED") // SUBMITTED, then REVIEWED by a manager
+  reviewedById String?
+  createdById  String
+  createdAt    DateTime @default(now())
+
+  project Project            @relation(fields: [projectId], references: [id])
+  updates ReportTaskUpdate[]
+  issues  SiteIssue[]
+
+  @@unique([projectId, date])
+}
+
+model ReportTaskUpdate {
+  id         String  @id @default(cuid())
+  reportId   String
+  taskId     String
+  completion Int // the task's completion after this report
+  note       String?
+
+  report SiteReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  task   Task       @relation(fields: [taskId], references: [id])
+
+  @@unique([reportId, taskId])
+}
+
+model SiteIssue {
+  id          String    @id @default(cuid())
+  number      String    @unique
+  projectId   String
+  reportId    String?
+  taskId      String?
+  date        DateTime  @db.Date
+  kind        IssueKind
+  description String
+  daysLost    Decimal   @default(0) @db.Decimal(5, 1)
+  resolved    Boolean   @default(false)
+  resolvedAt  DateTime?
+  resolution  String?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  project Project     @relation(fields: [projectId], references: [id])
+  report  SiteReport? @relation(fields: [reportId], references: [id])
+  task    Task?       @relation(fields: [taskId], references: [id])
+
+  @@index([projectId, resolved])
+}
+
+// ---------------------------------------------------------------------------
+// Attachments: receipts, delivery notes and site photos. The file itself lives in storage, never in the
+// database. The type is decided by the file's own bytes, not its name. A removed attachment is hidden and
+// logged, and the file is kept.
+// ---------------------------------------------------------------------------
+
+model Attachment {
+  id           String    @id @default(cuid())
+  entity       String // Expense, Invoice, SiteReport, PurchaseOrder, Subcontract
+  entityId     String
+  filename     String // the name shown to people, cleaned
+  mime         String // from the file's bytes
+  size         Int
+  sha256       String
+  storageKey   String    @unique
+  note         String?
+  removed      Boolean   @default(false)
+  removedById  String?
+  removedAt    DateTime?
+  removeReason String?
+  uploadedById String
+  createdAt    DateTime  @default(now())
+
+  @@index([entity, entityId])
+  @@index([sha256])
+}
+
+// File bytes when STORAGE_DRIVER=db (hosting without a persistent disk). Keyed like the disk files.
+model StoredFile {
+  key       String   @id
+  bytes     Bytes
+  createdAt DateTime @default(now())
+}
