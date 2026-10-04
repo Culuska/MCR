@@ -10,10 +10,13 @@ function poolSize() {
   return /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL ?? "") ? 2 : 10;
 }
 
+// Hosted databases (Supabase, Neon) need an encrypted connection; the local development one does not.
+const hosted = !/localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL ?? "");
+
 export const db =
   globalForPrisma.prisma ??
   new PrismaClient({
-    adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL, max: poolSize(), idleTimeoutMillis: 10_000 }),
+    adapter: new PrismaPg({ connectionString: hosted ? process.env.DATABASE_URL?.replace(/[?&]sslmode=[^&]*/, "") : process.env.DATABASE_URL, ssl: hosted ? { rejectUnauthorized: false } : undefined, max: poolSize(), idleTimeoutMillis: 10_000 }),
   });
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
