@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -12,7 +13,8 @@ const COOKIE = "mcr_session";
 const MAX_AGE = 60 * 60 * 12; // 12 hours
 
 function secret() {
-  const s = process.env.SESSION_SECRET;
+  // SESSION_SECRET, or on Vercel with Supabase attached, a key derived from Supabase's own secret (never used as is).
+  const s = process.env.SESSION_SECRET ?? (process.env.SUPABASE_JWT_SECRET ? createHmac("sha256", process.env.SUPABASE_JWT_SECRET).update("mcr-session").digest("hex") : undefined);
   if (!s || s.length < 32) throw new Error("SESSION_SECRET must be set (32+ characters)");
   return new TextEncoder().encode(s);
 }

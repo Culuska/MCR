@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 // Where uploaded files live: a folder (STORAGE_DIR, default ./storage), or the database when STORAGE_DRIVER=db (use this on hosts with no persistent disk).
 // Everything goes through these two functions, so moving to cloud storage later means replacing this file only.
 
-const dbStorage = () => process.env.STORAGE_DRIVER === "db";
+const dbStorage = () => (process.env.STORAGE_DRIVER ?? (process.env.VERCEL ? "db" : "disk")) === "db";
 const root = () => path.resolve(/*turbopackIgnore: true*/ process.env.STORAGE_DIR ?? path.join(/*turbopackIgnore: true*/ process.cwd(), "storage"));
 
 export async function putFile(bytes: Uint8Array): Promise<string> {
