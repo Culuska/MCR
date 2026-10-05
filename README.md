@@ -88,6 +88,10 @@ Receipts, delivery notes, site photos and signed documents can be attached to ex
 
 ## PDF documents
 
+**Reports** (the Reports page) can be previewed as a landscape PDF in a window before you download it, and also downloaded as CSV. The PDF and the CSV are built from the same rows. Reports over 5,000 rows show the first 5,000 in the PDF with a note; the CSV has everything. Phone browsers often cannot show a PDF inside the preview window, so use "Open in new tab" or "Download PDF" there.
+
+Business documents:
+
 Invoice, project statement, payslips (approved or paid payroll runs only, one page per employee) and subcontract payment certificate, from the buttons on each record or `/api/pdf/<invoice|project|payroll|certificate>/<id>`. Each kind needs read access to its own module. Figures come from the same calculations as the screens. The built-in PDF fonts cover Western European text only, so other scripts (for example Arabic) print as `?`.
 
 ## Putting it online

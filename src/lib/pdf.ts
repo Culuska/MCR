@@ -12,8 +12,8 @@ export const safe = (s: unknown) => String(s ?? "").replace(/[^\x20-\x7E -ÿ]/g
 export type Doc = InstanceType<typeof PDFDocument>;
 export type Col = { label: string; width: number; align?: "left" | "right" };
 
-export function newDoc(title: string): Doc {
-  return new PDFDocument({ size: "A4", margin: M, bufferPages: true, info: { Title: safe(title), Author: "MCR Finance", Producer: "MCR Finance", Creator: "MCR Finance" } });
+export function newDoc(title: string, opts: { landscape?: boolean } = {}): Doc {
+  return new PDFDocument({ size: "A4", layout: opts.landscape ? "landscape" : "portrait", margin: M, bufferPages: true, info: { Title: safe(title), Author: "MCR Finance", Producer: "MCR Finance", Creator: "MCR Finance" } });
 }
 
 export function finish(doc: Doc): Promise<Buffer> {
@@ -86,18 +86,22 @@ export function pairs(doc: Doc, rows: [string, string][], opts: { labelWidth?: n
   doc.x = M;
 }
 
-export function table(doc: Doc, cols: Col[], rows: string[][], opts: { totals?: string[]; zebra?: boolean } = {}) {
+export function table(doc: Doc, cols: Col[], rows: string[][], opts: { totals?: string[]; zebra?: boolean; repeatHead?: boolean } = {}) {
   const left = M;
+  // A header that does not fit on one line wraps onto a second one, so long column names are never cut off.
+  doc.font("Helvetica-Bold").fontSize(8);
+  const headH = cols.some((c) => doc.widthOfString(c.label.toUpperCase()) > c.width - 10) ? 30 : 20;
   const draw = (cells: string[], o: { head?: boolean; total?: boolean; shade?: boolean }) => {
-    const h = o.head ? 20 : 18;
-    if (doc.y + h > doc.page.height - 64) { doc.addPage(); doc.y = M; }
+    const h = o.head ? headH : 18;
+    if (doc.y + h > doc.page.height - 64) { doc.addPage(); doc.y = M; if (opts.repeatHead && !o.head) draw(cols.map((c) => c.label), { head: true }); }
     const y = doc.y;
     if (o.head) doc.rect(left, y, cols.reduce((a, c) => a + c.width, 0), h).fill(SOFT);
     else if (o.shade) doc.rect(left, y, cols.reduce((a, c) => a + c.width, 0), h).fill("#fafbfd");
     doc.fillColor(o.head ? MUTED : INK).font(o.head || o.total ? "Helvetica-Bold" : "Helvetica").fontSize(o.head ? 8 : 9.5);
     let x = left;
     cols.forEach((c, i) => {
-      doc.text(safe(o.head ? cells[i].toUpperCase() : cells[i]), x + 5, y + (o.head ? 6 : 5), { width: c.width - 10, align: c.align ?? "left", lineBreak: false, ellipsis: true });
+      if (o.head) doc.text(safe(cells[i].toUpperCase()), x + 5, y + (headH > 20 ? 5 : 6), { width: c.width - 10, height: headH - 8, align: c.align ?? "left", lineGap: -1 });
+      else doc.text(safe(cells[i]), x + 5, y + 5, { width: c.width - 10, height: 12, align: c.align ?? "left", lineBreak: false, ellipsis: true });
       x += c.width;
     });
     if (!o.head) doc.moveTo(left, y + h).lineTo(left + cols.reduce((a, c) => a + c.width, 0), y + h).lineWidth(0.5).strokeColor(o.total ? INK : LINE).stroke();

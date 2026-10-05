@@ -160,3 +160,11 @@ details.more > .body { padding: 14px; }
   .head h1 { font-size: 28px; }
   .fields, .fields.three { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* PDF preview window on the Reports page */
+dialog.pv { width: min(1100px, 96vw); height: 90vh; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; }
+dialog.pv[open] { display: flex; flex-direction: column; }
+dialog.pv::backdrop { background: rgba(10, 18, 28, 0.55); }
+.pv-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.pv-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pv-frame { flex: 1; width: 100%; border: 0; background: #fff; }
