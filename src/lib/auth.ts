@@ -14,7 +14,8 @@ const MAX_AGE = 60 * 60 * 12; // 12 hours
 
 function secret() {
   // SESSION_SECRET, or on Vercel with Supabase attached, a key derived from Supabase's own secret (never used as is).
-  const s = process.env.SESSION_SECRET ?? (process.env.SUPABASE_JWT_SECRET ? createHmac("sha256", process.env.SUPABASE_JWT_SECRET).update("mcr-session").digest("hex") : undefined);
+  const base = process.env.SUPABASE_JWT_SECRET ?? process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const s = process.env.SESSION_SECRET ?? (base ? createHmac("sha256", base).update("mcr-session").digest("hex") : undefined);
   if (!s || s.length < 32) throw new Error("SESSION_SECRET must be set (32+ characters)");
   return new TextEncoder().encode(s);
 }
