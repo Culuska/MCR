@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 // Everything goes through these two functions, so moving to cloud storage later means replacing this file only.
 
 const dbStorage = () => process.env.STORAGE_DRIVER === "db";
-const root = () => path.resolve(process.env.STORAGE_DIR ?? path.join(process.cwd(), "storage"));
+const root = () => path.resolve(/*turbopackIgnore: true*/ process.env.STORAGE_DIR ?? path.join(/*turbopackIgnore: true*/ process.cwd(), "storage"));
 
 export async function putFile(bytes: Uint8Array): Promise<string> {
   const now = new Date();
@@ -18,7 +18,7 @@ export async function putFile(bytes: Uint8Array): Promise<string> {
     await db.storedFile.create({ data: { key, bytes: Buffer.from(bytes) } });
     return key;
   }
-  const target = path.join(root(), key);
+  const target = path.join(/*turbopackIgnore: true*/ root(), key);
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(target, bytes, { flag: "wx" }); // wx: never overwrite an existing file
   return key;
@@ -32,7 +32,7 @@ export async function getFile(key: string): Promise<Buffer> {
     if (!f) throw new Error("File not found.");
     return Buffer.from(f.bytes);
   }
-  const target = path.resolve(root(), key);
+  const target = path.resolve(/*turbopackIgnore: true*/ root(), key);
   if (!target.startsWith(root() + path.sep)) throw new Error("Invalid storage key.");
   return readFile(target);
 }
