@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { assertExpense, assertInvoice, assertProject, assertRecord, scopeOf } from "@/lib/scope";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db, type Tx } from "@/lib/db";
@@ -120,6 +121,13 @@ async function deleteOnly(fd: FormData): Promise<FormState> {
     if (!isKind(kind)) throw new ActionError("That kind of record cannot be deleted.");
     const def = KINDS[kind];
     const user = await requireWrite(def.module);
+    // Project-level access: only things on projects you may see, and only people with access to every project delete shared records.
+    if (!(await scopeOf(user)).all && ["customer", "supplier", "employee", "material", "asset"].includes(kind)) throw new ActionError("Only people with access to all projects can delete this.");
+    if (kind === "project") await assertProject(user, id);
+    else if (kind === "invoice") await assertInvoice(user, id);
+    else if (kind === "expense") await assertExpense(user, id);
+    else if (kind === "task") await assertRecord(user, "task", id);
+    else if (kind === "subcontract") await assertRecord(user, "subcontract", id);
 
     return db.$transaction(async (tx) => {
       const found = await inspect(tx, kind, id, user);

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { expenseWhere, projectWhere, scopeOf } from "@/lib/scope";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { ExpenseCategory, ExpenseStatus } from "@/generated/prisma/enums";
@@ -15,7 +16,8 @@ type SP = { status?: string; project?: string; category?: string; q?: string };
 export default async function Expenses({ searchParams }: { searchParams: Promise<SP> }) {
   const user = await requireRead("expenses");
   const sp = await searchParams;
-  const where: Prisma.ExpenseWhereInput = {};
+  const scope = await scopeOf(user);
+  const where: Prisma.ExpenseWhereInput = { AND: [expenseWhere(scope, user.id)] }; // people limited to some projects only see those
   if (sp.status && sp.status in ExpenseStatus) where.status = sp.status as keyof typeof ExpenseStatus;
   if (sp.project) where.projectId = sp.project === "none" ? null : sp.project;
   if (sp.category && sp.category in ExpenseCategory) where.category = sp.category as keyof typeof ExpenseCategory;
@@ -23,7 +25,7 @@ export default async function Expenses({ searchParams }: { searchParams: Promise
 
   const [rows, projects] = await Promise.all([
     db.expense.findMany({ where, include: { project: true, supplier: true }, orderBy: [{ date: "desc" }, { number: "desc" }], take: 200 }),
-    db.project.findMany({ orderBy: { code: "asc" } }),
+    db.project.findMany({ where: projectWhere(scope), orderBy: { code: "asc" } }),
   ]);
   const live = rows.filter((r) => r.status !== "VOID");
 

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { currentScope, projectWhere } from "@/lib/scope";
 import { saveSubcontract } from "@/actions/subcontracts";
 import { ActionForm, Submit } from "@/components/ActionForm";
 import { Field, clean } from "@/components/ui";
@@ -8,7 +9,7 @@ import type { Subcontract } from "@/generated/prisma/client";
 export async function SubcontractForm({ subcontract }: { subcontract?: Subcontract }) {
   const [suppliers, projects] = await Promise.all([
     db.supplier.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
-    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } }, orderBy: { code: "asc" } }),
+    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, ...projectWhere(await currentScope()) }, orderBy: { code: "asc" } }),
   ]);
   return (
     <ActionForm action={saveSubcontract} goToPrefix="/subcontracts/">

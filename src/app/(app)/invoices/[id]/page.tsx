@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireInvoice } from "@/lib/scope";
 import { DeleteButton } from "@/components/DeleteButton";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -15,6 +16,7 @@ import { receivePayment, transitionInvoice } from "@/actions/invoices";
 export default async function InvoiceDetail({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRead("invoices");
   const { id } = await params;
+  await requireInvoice(user, id);
   const inv = await db.invoice.findUnique({
     where: { id }, include: { customer: true, project: true, payments: { include: { account: true }, orderBy: { date: "asc" } } },
   });

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireCompanyWide } from "@/lib/scope";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
@@ -15,6 +16,7 @@ const cellInput = { width: 86, padding: "5px 7px", border: "1px solid var(--line
 
 export default async function PayrollRunPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRead("payroll");
+  await requireCompanyWide(user, "payroll");
   const { id } = await params;
   const r = await db.payrollRun.findUnique({
     where: { id },

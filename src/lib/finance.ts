@@ -4,9 +4,14 @@ import { SYS } from "@/lib/domain";
 import { behindSchedule, retentionHeld, revisedValue } from "@/lib/subcontract";
 import { previousWorkingDay } from "@/lib/operations";
 import { siteAlerts, todayUtc } from "@/lib/site";
+import { idsOf, type Scope } from "@/lib/scope-rules";
 import type { ExpenseCategory, AccountType } from "@/generated/prisma/client";
 
 // Every number shown on a dashboard or report comes from this file, so pages cannot disagree.
+
+// Functions that list or add up project data take a Scope. A person limited to some projects only ever gets those back.
+const EVERYTHING: Scope = { all: true };
+const inIds = (ids: string[] | null) => (ids ? { in: ids } : undefined);
 
 const COST_STATUSES = ["APPROVED", "PAID"] as const; // an approved expense is a real cost, paid or not
 
@@ -83,14 +88,14 @@ export async function projectCosting(projectId: string) {
   };
 }
 
-export async function allProjectsSummary() {
-  const projects = await db.project.findMany({ orderBy: { code: "asc" } });
+export async function allProjectsSummary(scope: Scope = EVERYTHING) {
+  const projects = await db.project.findMany({ where: { id: inIds(idsOf(scope)) }, orderBy: { code: "asc" } });
   return Promise.all(projects.map((p) => projectCosting(p.id)));
 }
 
-export async function receivables() {
+export async function receivables(scope: Scope = EVERYTHING) {
   const open = await db.invoice.findMany({
-    where: { status: { in: ["SENT", "PARTIAL"] } },
+    where: { status: { in: ["SENT", "PARTIAL"] }, projectId: inIds(idsOf(scope)) },
     include: { customer: true, project: true, payments: { where: { voided: false } } },
     orderBy: { dueDate: "asc" },
   });
@@ -105,9 +110,9 @@ export async function receivables() {
 
 export const AGE_BUCKETS = ["Not due", "1–30 days", "31–60 days", "Over 60 days"] as const;
 
-export async function payables() {
+export async function payables(scope: Scope = EVERYTHING) {
   const open = await db.expense.findMany({
-    where: { status: "APPROVED" },
+    where: { status: "APPROVED", projectId: inIds(idsOf(scope)) },
     include: { supplier: true, project: true, payments: { where: { voided: false } } },
     orderBy: { date: "asc" },
   });
@@ -144,36 +149,38 @@ export async function cashFlow(months = 6) {
   return out;
 }
 
-export async function expenseBreakdown() {
-  const g = await db.expense.groupBy({ by: ["category"], where: { status: { in: [...COST_STATUSES] }, category: { not: "STOCK_PURCHASE" } }, _sum: { amount: true } });
+export async function expenseBreakdown(scope: Scope = EVERYTHING) {
+  const ids = idsOf(scope);
+  const g = await db.expense.groupBy({ by: ["category"], where: { status: { in: [...COST_STATUSES] }, category: { not: "STOCK_PURCHASE" }, projectId: inIds(ids) }, _sum: { amount: true } });
   const totals = new Map<ExpenseCategory, Money>(g.map((x) => [x.category, D(x._sum.amount)]));
-  const payroll = await db.payrollAllocation.aggregate({ where: { line: { run: { status: { in: [...COST_STATUSES] } } } }, _sum: { amount: true } });
+  const payroll = await db.payrollAllocation.aggregate({ where: { projectId: inIds(ids), line: { run: { status: { in: [...COST_STATUSES] } } } }, _sum: { amount: true } });
   if (payroll._sum.amount) totals.set("WAGES", (totals.get("WAGES") ?? ZERO).plus(D(payroll._sum.amount)));
-  const certs = await db.subCertificate.aggregate({ where: { status: { in: [...COST_STATUSES] } }, _sum: { gross: true } });
+  const certs = await db.subCertificate.aggregate({ where: { status: { in: [...COST_STATUSES] }, subcontract: ids ? { projectId: { in: ids } } : undefined }, _sum: { gross: true } });
   if (certs._sum.gross) totals.set("SUBCONTRACTORS", (totals.get("SUBCONTRACTORS") ?? ZERO).plus(D(certs._sum.gross)));
-  const issued = await db.stockMovement.aggregate({ where: { type: "ISSUE", voided: false }, _sum: { value: true } });
+  const issued = await db.stockMovement.aggregate({ where: { type: "ISSUE", voided: false, projectId: inIds(ids) }, _sum: { value: true } });
   if (issued._sum.value) totals.set("MATERIALS", (totals.get("MATERIALS") ?? ZERO).plus(D(issued._sum.value)));
   return [...totals.entries()].map(([category, total]) => ({ category, total })).sort((a, b) => b.total.comparedTo(a.total));
 }
 
-export async function alerts() {
+export async function alerts(scope: Scope = EVERYTHING) {
+  const ids = idsOf(scope);
   const out: { tone: "bad" | "warn"; text: string; href: string }[] = [];
   // A cash or bank account below zero means money was paid out that was never recorded as received.
-  for (const a of (await ledgerBalances()).filter((r) => r.isCash && r.balance.isNegative())) {
+  for (const a of (ids ? [] : await ledgerBalances()).filter((r) => r.isCash && r.balance.isNegative())) { // company-wide figures are not shown to project-limited people
     out.push({ tone: "bad", text: `${a.name} is overdrawn by ${fmt(a.balance.abs())}. Check receipts and transfers are recorded.`, href: "/finance?tab=cash" });
   }
-  for (const s of await allProjectsSummary()) {
+  for (const s of await allProjectsSummary(scope)) {
     if (s.project.status === "CANCELLED" || s.project.status === "COMPLETED") continue;
     for (const l of s.lines.filter((x) => x.level >= 90 && !x.budget.isZero())) {
       out.push({ tone: l.level === 100 ? "bad" : "warn", text: `${s.project.code}: ${l.category.toLowerCase().replace(/_/g, " ")} at ${Math.round(l.used)}% of budget`, href: `/projects/${s.project.id}` });
     }
   }
-  for (const i of (await receivables()).filter((x) => x.overdue)) {
+  for (const i of (await receivables(scope)).filter((x) => x.overdue)) {
     out.push({ tone: "bad", text: `Invoice ${i.number} from ${i.customer.name} is overdue (${fmt(i.outstanding)} outstanding)`, href: "/invoices" });
   }
-  const pending = await db.expense.count({ where: { status: "SUBMITTED" } });
+  const pending = await db.expense.count({ where: { status: "SUBMITTED", projectId: inIds(ids) } });
   if (pending) out.push({ tone: "warn", text: `${pending} expense${pending === 1 ? "" : "s"} waiting for approval`, href: "/expenses?status=SUBMITTED" });
-  const late = await db.project.count({ where: { status: "ACTIVE", expectedEnd: { lt: new Date() } } });
+  const late = await db.project.count({ where: { status: "ACTIVE", expectedEnd: { lt: new Date() }, id: inIds(ids) } });
   if (late) out.push({ tone: "warn", text: `${late} active project${late === 1 ? " is" : "s are"} past the planned finish date`, href: "/projects" });
   const soon = (days: number) => new Date(Date.now() + days * 86400000);
   for (const a of await db.asset.findMany({ where: { active: true, status: { not: "RETIRED" }, OR: [{ nextServiceDate: { lte: soon(14) } }, { insuranceExpiry: { lte: soon(30) } }] } })) {
@@ -183,34 +190,35 @@ export async function alerts() {
   for (const r of await db.rental.findMany({ where: { status: "ACTIVE", endDate: { lte: soon(7) } }, include: { asset: true } })) {
     out.push({ tone: r.endDate < new Date() ? "bad" : "warn", text: `Hire of ${r.asset.name} ${r.endDate < new Date() ? "passed its end date. Close it or record the extension" : "ends soon"} (${r.number})`, href: "/assets?tab=rentals" });
   }
-  for (const s of (await subcontractFigures()).filter((x) => x.sub.status === "ACTIVE" || x.sub.status === "COMPLETED")) {
+  for (const s of (await subcontractFigures(undefined, scope)).filter((x) => x.sub.status === "ACTIVE" || x.sub.status === "COMPLETED")) {
     if (s.drafts > 0) out.push({ tone: "warn", text: `${s.sub.number} (${s.sub.supplier.name}) has a payment certificate waiting for approval`, href: `/subcontracts/${s.sub.id}` });
     if (s.unpaid.greaterThan(0)) out.push({ tone: "warn", text: `${fmt(s.unpaid)} is approved but unpaid on ${s.sub.number} (${s.sub.supplier.name})`, href: `/subcontracts/${s.sub.id}` });
     if (s.sub.status === "ACTIVE" && s.behind.greaterThan(0)) out.push({ tone: "warn", text: `${s.sub.number} is behind its payment programme by ${fmt(s.behind)} of certified work`, href: `/subcontracts/${s.sub.id}` });
     if (s.sub.status === "COMPLETED" && s.retentionHeld.greaterThan(0)) out.push({ tone: "warn", text: `${fmt(s.retentionHeld)} retention is still held on completed ${s.sub.number}`, href: `/subcontracts/${s.sub.id}` });
   }
   const today = todayUtc();
-  out.push(...(await siteAlerts(previousWorkingDay(today), today)));
+  out.push(...(await siteAlerts(previousWorkingDay(today), today, scope)));
   const materials = await db.material.findMany({ where: { active: true, reorderLevel: { gt: 0 } } });
   for (const m of materials.filter((x) => D(x.onHand).lessThanOrEqualTo(D(x.reorderLevel)))) {
     out.push({ tone: D(m.onHand).isZero() ? "bad" : "warn", text: `${m.name} is ${D(m.onHand).isZero() ? "out of stock" : "low"}: ${D(m.onHand).toString()} ${m.unit} left, reorder at ${D(m.reorderLevel).toString()}`, href: "/materials" });
   }
-  for (const r of (await db.payrollRun.findMany({ where: { status: "APPROVED" } }))) {
+  for (const r of (ids ? [] : await db.payrollRun.findMany({ where: { status: "APPROVED" } }))) {
     out.push({ tone: "warn", text: `Payroll ${r.number} is approved but not yet paid`, href: `/payroll/${r.id}` });
   }
   return out.sort((a, b) => (a.tone === "bad" ? 0 : 1) - (b.tone === "bad" ? 0 : 1)); // red first
 }
 
 // Running cost of every machine and vehicle: approved and paid expenses tagged to it, against the work logged.
-export async function assetCosting() {
+export async function assetCosting(scope: Scope = EVERYTHING) {
+  const ids = idsOf(scope);
   const now = new Date();
   const [assets, costs, usage] = await Promise.all([
     db.asset.findMany({
       where: { active: true }, orderBy: { code: "asc" },
       include: { assignments: { where: { startDate: { lte: now }, OR: [{ endDate: null }, { endDate: { gte: now } }] }, include: { project: true } } },
     }),
-    db.expense.groupBy({ by: ["assetId", "category"], where: { assetId: { not: null }, status: { in: [...COST_STATUSES] } }, _sum: { amount: true } }),
-    db.assetUsage.groupBy({ by: ["assetId"], _sum: { units: true, fuelLitres: true, trips: true } }),
+    db.expense.groupBy({ by: ["assetId", "category"], where: { assetId: { not: null }, status: { in: [...COST_STATUSES] }, projectId: inIds(ids) }, _sum: { amount: true } }),
+    db.assetUsage.groupBy({ by: ["assetId"], where: { projectId: inIds(ids) }, _sum: { units: true, fuelLitres: true, trips: true } }),
   ]);
   return assets.map((asset) => {
     const mine = costs.filter((c) => c.assetId === asset.id);
@@ -219,7 +227,7 @@ export async function assetCosting() {
     const units = D(u?.units), litres = D(u?.fuelLitres);
     const cost = sum(mine.map((c) => c._sum.amount));
     return {
-      asset, project: asset.assignments[0]?.project ?? null, cost, units, litres, trips: u?.trips ?? 0,
+      asset, project: ids && asset.assignments[0] && !ids.includes(asset.assignments[0].projectId) ? null : asset.assignments[0]?.project ?? null, cost, units, litres, trips: u?.trips ?? 0,
       fuel: by(["FUEL"]), hire: by(["EQUIPMENT_RENTAL", "TRUCK_RENTAL"]), maintenance: by(["EQUIPMENT_MAINTENANCE", "VEHICLE_MAINTENANCE"]),
       other: cost.minus(by(["FUEL", "EQUIPMENT_RENTAL", "TRUCK_RENTAL", "EQUIPMENT_MAINTENANCE", "VEHICLE_MAINTENANCE"])),
       costPerUnit: units.isZero() ? null : cost.div(units), litresPerUnit: units.isZero() ? null : litres.div(units),
@@ -227,8 +235,8 @@ export async function assetCosting() {
   });
 }
 
-export async function fuelByProject() {
-  const g = await db.assetUsage.groupBy({ by: ["projectId"], _sum: { fuelLitres: true, units: true } });
+export async function fuelByProject(scope: Scope = EVERYTHING) {
+  const g = await db.assetUsage.groupBy({ by: ["projectId"], where: { projectId: inIds(idsOf(scope)) }, _sum: { fuelLitres: true, units: true } });
   const projects = await db.project.findMany({ select: { id: true, code: true, name: true } });
   return g.map((x) => ({ project: projects.find((p) => p.id === x.projectId) ?? null, litres: D(x._sum.fuelLitres), units: D(x._sum.units) }))
     .filter((x) => x.litres.greaterThan(0)).sort((a, b) => b.litres.comparedTo(a.litres));
@@ -250,9 +258,11 @@ export async function stockSummary() {
 }
 
 // Every figure about a subcontract, from its variations, certificates and retention releases.
-export async function subcontractFigures(projectId?: string) {
+export async function subcontractFigures(projectId?: string, scope: Scope = EVERYTHING) {
+  const ids = idsOf(scope);
+  if (projectId && ids && !ids.includes(projectId)) return [];
   const subs = await db.subcontract.findMany({
-    where: { projectId, status: { not: "CANCELLED" } }, orderBy: { number: "asc" },
+    where: { projectId: projectId ?? inIds(ids), status: { not: "CANCELLED" } }, orderBy: { number: "asc" },
     include: { supplier: true, project: true, variations: true, schedule: true, certificates: { orderBy: { seq: "asc" } }, releases: { where: { voided: false } } },
   });
   const now = new Date();

@@ -61,9 +61,10 @@ def _body(data, boundary):
     return out + (f"--{boundary}--").encode() + CRLF
 
 
-def submit(path, marker, values, contains=None, page_as=None):
+def submit(path, marker, values, contains=None, page_as=None, post_path=None):
     """Finds the form on `path` that has a field called `marker`, fills it, posts it, returns the message shown.
-    `page_as` reads the page as another user, to borrow a form the current user cannot see."""
+    `page_as` reads the page as another user, to borrow a form the current user cannot see.
+    `post_path` posts the form to a different page than the one it was read from (what a forged request would do)."""
     global TOKEN
     me = TOKEN
     if page_as:
@@ -77,7 +78,7 @@ def submit(path, marker, values, contains=None, page_as=None):
             data[n] = v
     data.update(values)
     boundary = "----" + uuid.uuid4().hex
-    req = urllib.request.Request(BASE + path, data=_body(data, boundary), headers={
+    req = urllib.request.Request(BASE + (post_path or path), data=_body(data, boundary), headers={
         "Cookie": f"mcr_session={TOKEN}", "Content-Type": f"multipart/form-data; boundary={boundary}", "Origin": BASE})
     try:
         res = urllib.request.urlopen(req, timeout=180).read().decode()

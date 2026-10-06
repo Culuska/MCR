@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { scopeOf } from "@/lib/scope";
 import { requireRead } from "@/lib/auth";
 import { canWrite } from "@/lib/permissions";
 import { subcontractFigures } from "@/lib/finance";
@@ -11,7 +12,7 @@ export const metadata = { title: "Subcontracts" };
 
 export default async function Subcontracts() {
   const user = await requireRead("subcontracts");
-  const rows = await subcontractFigures();
+  const rows = await subcontractFigures(undefined, await scopeOf(user));
   const live = rows.filter((r) => r.sub.status === "ACTIVE" || r.sub.status === "COMPLETED");
   const order = ["ACTIVE", "DRAFT", "COMPLETED"];
   rows.sort((a, b) => order.indexOf(a.sub.status) - order.indexOf(b.sub.status));

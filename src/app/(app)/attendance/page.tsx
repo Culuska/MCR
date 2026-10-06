@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { currentScope, onProject, projectWhere } from "@/lib/scope";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
 import { canWrite } from "@/lib/permissions";
@@ -21,8 +22,8 @@ export default async function Attendance({ searchParams }: { searchParams: Promi
   // Names and positions only: pay rates are not selected, so supervisors never receive them.
   const [employees, records, projects, locks] = await Promise.all([
     db.employee.findMany({ where: { active: true }, select: { id: true, code: true, name: true, position: true }, orderBy: { code: "asc" } }),
-    db.attendance.findMany({ where: { date: day } }),
-    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } }, orderBy: { code: "asc" } }),
+    db.attendance.findMany({ where: { date: day, ...onProject(await currentScope()) } }),
+    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, ...projectWhere(await currentScope()) }, orderBy: { code: "asc" } }),
     db.payrollLine.findMany({ where: { run: { status: { not: "VOID" }, periodStart: { lte: day }, periodEnd: { gte: day } } }, select: { employeeId: true, run: { select: { number: true } } } }),
   ]);
   const byEmp = new Map(records.map((r) => [r.employeeId, r]));

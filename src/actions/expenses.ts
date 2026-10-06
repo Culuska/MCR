@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { assertExpense, assertProject, scopeOf } from "@/lib/scope";
 import { z } from "zod";
 import { db, type Tx } from "@/lib/db";
 import { requireWrite } from "@/lib/auth";
@@ -42,6 +43,10 @@ export async function saveExpense(_: FormState, fd: FormData): Promise<FormState
   return run(async () => {
     const user = await requireWrite("expenses");
     const v = expenseSchema.parse(formObject(fd));
+    // Project-level access: the server decides, whatever the browser sent.
+    if (!(await scopeOf(user)).all && !v.projectId) throw new ActionError("Choose the project this cost belongs to.");
+    if (v.projectId) await assertProject(user, v.projectId);
+    if (v.id) await assertExpense(user, v.id);
     if (v.category === "STOCK_PURCHASE") throw new ActionError("Stock bills are raised by receiving goods against a purchase order.");
     if (v.paymentMethod && !(v.paymentMethod in PaymentMethod)) throw new ActionError("Choose a valid payment method.");
 
@@ -85,6 +90,7 @@ export async function transitionExpense(_: FormState, fd: FormData): Promise<For
   return run(async () => {
     const user = await requireWrite("expenses");
     const { id, to, reason } = transitionSchema.parse(formObject(fd));
+    await assertExpense(user, id);
 
     return db.$transaction(async (tx) => {
       const e = await tx.expense.findUniqueOrThrow({ where: { id }, include: { payments: { where: { voided: false } } } });
@@ -149,6 +155,7 @@ export async function payExpense(_: FormState, fd: FormData): Promise<FormState>
     const user = await requireWrite("expenses");
     if (!APPROVERS.includes(user.role)) throw new ActionError("Only finance staff can record payments.");
     const v = paySchema.parse(formObject(fd));
+    await assertExpense(user, v.expenseId);
 
     return db.$transaction(async (tx) => {
       const e = await tx.expense.findUniqueOrThrow({ where: { id: v.expenseId }, include: { payments: { where: { voided: false } } } });

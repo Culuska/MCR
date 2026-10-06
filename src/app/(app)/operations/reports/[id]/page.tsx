@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireRecord } from "@/lib/scope";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
@@ -15,6 +16,7 @@ import { label } from "@/lib/domain";
 export default async function ReportPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRead("operations");
   const { id } = await params;
+  await requireRecord(user, "siteReport", id);
   const r = await db.siteReport.findUnique({ where: { id }, include: { project: true, updates: { include: { task: true } }, issues: true } });
   if (!r) notFound();
   const [facts, users] = await Promise.all([siteDay(r.projectId, r.date), db.user.findMany({ select: { id: true, name: true } })]);

@@ -112,7 +112,15 @@ The local `prisma dev` database drops connections when more than two are open, s
 - **Email settings (environment variables, never committed):** `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM`, `EMAIL_FROM_NAME` (and `EMAIL_SECURE=true` for port 465). **`APP_URL`** must be the public address of the app (for example `https://www.mcrltd.app`); links in emails are built from it and never from the request, so a forged Host header cannot redirect a reset. Without email set up nothing is sent; an administrator can still set a temporary password (People and roles). In development, with no email set, the reset link is printed in the server console.
 - Tests: `scripts/check-security.ts` (rules) and `scripts/test_security.py` (real flows over HTTP, needs a local copy).
 
-Not built yet: access limited to assigned projects, permissions editable per role, two-factor sign-in, "remember me".
+Not built yet: permissions editable per role, two-factor sign-in, "remember me".
+
+## Project-level access
+
+Project Managers and Site Supervisors see **only the projects assigned to them** (plus any project they manage). Every other role sees all projects. In Settings → People and roles, open **Project access** on a person to give them all projects, or limit anyone (a Viewer, an Accountant ...) to chosen projects. A Super Admin always sees everything.
+
+It is enforced on the server, not just hidden in the screens: project, expense, invoice, task, site report, subcontract and purchase order pages answer "not found" for a project you cannot see (so changing the URL gets nothing); lists, totals, the dashboard and alerts only count your projects; reports, PDFs and file downloads check the project; and every action (save, approve, pay, delete, upload) refuses a project you do not have, even from a forged request. Someone limited to some projects must always choose a project (no company-overhead expenses), never sees company-wide cash, debts, profit, the ledger, payroll or the company-wide reports, and can run only the project reports (expenses, budget against actual, project profitability, subcontracts, tasks, issues, material usage). A project manager who creates a project is assigned to it automatically.
+
+**Heads up:** a new Project Manager or Site Supervisor sees no projects until you assign some (or make them the project's manager). Rules: `src/lib/scope-rules.ts` (checked by `scripts/check-scope.ts`), enforcement in `src/lib/scope.ts`; `scripts/test_scope.py` tries to break it over HTTP (local copy only).
 
 ## Profit and loss
 
@@ -140,6 +148,7 @@ npx tsx scripts/check-subcontract.ts  # certificate and retention rules
 npx tsx scripts/check-operations.ts   # task, progress and delay rules
 npx tsx scripts/check-files.ts     # attachment type and size rules
 npx tsx scripts/check-pdf.ts       # PDF engine
+npx tsx scripts/check-scope.ts          # who may see which project
 npx tsx scripts/check-security.ts       # password rules, lockout, reset tokens
 npx tsx scripts/check-profit-loss.ts   # profit and loss rules, agrees with the balance sheet
 npx tsx scripts/check-balance-sheet.ts  # layout, and the sheet balances on any date

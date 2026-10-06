@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { assertProject, assertRecord } from "@/lib/scope";
 import { z } from "zod";
 import { db, type Tx } from "@/lib/db";
 import { requireWrite } from "@/lib/auth";
@@ -63,6 +64,7 @@ export async function saveSubcontract(_: FormState, fd: FormData): Promise<FormS
   const result = await run(async () => {
     const user = await requireWrite("subcontracts");
     const v = subSchema.parse(formObject(fd));
+    await assertProject(user, v.projectId); if (v.id) await assertRecord(user, "subcontract", v.id);
     if (v.startDate && v.endDate && v.endDate < v.startDate) throw new ActionError("The end date cannot be before the start date.");
     return db.$transaction(async (tx) => {
       await openProject(tx, v.projectId);
@@ -92,6 +94,7 @@ export async function transitionSubcontract(_: FormState, fd: FormData): Promise
   return run(async () => {
     const user = await requireWrite("subcontracts");
     const { id, to, reason } = z.object({ id: z.string(), to: z.enum(["ACTIVATE", "COMPLETE", "CANCEL"]), reason: optionalText }).parse(formObject(fd));
+    await assertRecord(user, "subcontract", id);
     return db.$transaction(async (tx) => {
       await lock(tx, id);
       const p = await position(tx, id);
@@ -133,6 +136,7 @@ export async function addVariation(_: FormState, fd: FormData): Promise<FormStat
   return run(async () => {
     const user = await requireWrite("subcontracts");
     const v = z.object({ subcontractId: z.string(), description: z.string().trim().min(3, "Describe the change."), amount: z.coerce.number({ error: "Enter the amount." }) }).parse(formObject(fd));
+    await assertRecord(user, "subcontract", v.subcontractId);
     if (!v.amount) throw new ActionError("A variation cannot be zero. Use a minus sign for omitted work.");
     return db.$transaction(async (tx) => {
       const s = await tx.subcontract.findUniqueOrThrow({ where: { id: v.subcontractId } });
@@ -150,6 +154,7 @@ export async function decideVariation(_: FormState, fd: FormData): Promise<FormS
     const user = await requireWrite("subcontracts");
     if (!APPROVERS.includes(user.role)) throw new ActionError("Only finance staff can decide a variation.");
     const { id, to } = z.object({ id: z.string(), to: z.enum(["APPROVE", "REJECT"]) }).parse(formObject(fd));
+    await assertRecord(user, "subVariation", id);
     return db.$transaction(async (tx) => {
       const vr = await tx.subVariation.findUniqueOrThrow({ where: { id } });
       await lock(tx, vr.subcontractId);
@@ -176,6 +181,7 @@ export async function addScheduleItem(_: FormState, fd: FormData): Promise<FormS
   return run(async () => {
     const user = await requireWrite("subcontracts");
     const v = z.object({ subcontractId: z.string(), description: z.string().trim().min(3, "Describe the milestone."), amount: money, dueDate: date }).parse(formObject(fd));
+    await assertRecord(user, "subcontract", v.subcontractId);
     return db.$transaction(async (tx) => {
       await lock(tx, v.subcontractId);
       const p = await position(tx, v.subcontractId);
@@ -194,6 +200,7 @@ export async function removeScheduleItem(_: FormState, fd: FormData): Promise<Fo
   return run(async () => {
     const user = await requireWrite("subcontracts");
     const { id } = z.object({ id: z.string() }).parse(formObject(fd));
+    await assertRecord(user, "subScheduleItem", id);
     const it = await db.subScheduleItem.findUniqueOrThrow({ where: { id }, include: { subcontract: true } });
     await db.subScheduleItem.delete({ where: { id } });
     await audit({ userId: user.id, action: "subcontract.schedule.remove", entity: "Subcontract", entityId: it.subcontractId, summary: `${user.name} removed a milestone from ${it.subcontract.number}: ${it.description}` });
@@ -210,6 +217,7 @@ export async function createCertificate(_: FormState, fd: FormData): Promise<For
   return run(async () => {
     const user = await requireWrite("subcontracts");
     const v = certSchema.parse(formObject(fd));
+    await assertRecord(user, "subcontract", v.subcontractId);
     if (v.date > endOfToday()) throw new ActionError("The certificate date cannot be in the future.");
     return db.$transaction(async (tx) => {
       await lock(tx, v.subcontractId);
@@ -232,6 +240,7 @@ export async function transitionCertificate(_: FormState, fd: FormData): Promise
     const user = await requireWrite("subcontracts");
     if (!APPROVERS.includes(user.role)) throw new ActionError("Only finance staff can approve or void payment certificates.");
     const { id, to, reason } = z.object({ id: z.string(), to: z.enum(["APPROVE", "VOID"]), reason: optionalText }).parse(formObject(fd));
+    await assertRecord(user, "subCertificate", id);
     return db.$transaction(async (tx) => {
       const cert = await tx.subCertificate.findUniqueOrThrow({ where: { id } });
       await lock(tx, cert.subcontractId);
@@ -285,6 +294,7 @@ export async function payCertificate(_: FormState, fd: FormData): Promise<FormSt
     const user = await requireWrite("subcontracts");
     if (!APPROVERS.includes(user.role)) throw new ActionError("Only finance staff can record payments.");
     const v = paySchema.parse(formObject(fd));
+    await assertRecord(user, "subCertificate", v.id);
     if (v.date > endOfToday()) throw new ActionError("The payment date cannot be in the future.");
     return db.$transaction(async (tx) => {
       const cert = await tx.subCertificate.findUniqueOrThrow({ where: { id: v.id }, include: { subcontract: { include: { supplier: true } } } });
@@ -314,6 +324,7 @@ export async function releaseRetention(_: FormState, fd: FormData): Promise<Form
     const user = await requireWrite("subcontracts");
     if (!APPROVERS.includes(user.role)) throw new ActionError("Only finance staff can release retention.");
     const v = releaseSchema.parse(formObject(fd));
+    await assertRecord(user, "subcontract", v.subcontractId);
     if (v.date > endOfToday()) throw new ActionError("The date cannot be in the future.");
     return db.$transaction(async (tx) => {
       await lock(tx, v.subcontractId);
@@ -338,6 +349,7 @@ export async function voidRelease(_: FormState, fd: FormData): Promise<FormState
     const user = await requireWrite("subcontracts");
     if (!APPROVERS.includes(user.role)) throw new ActionError("Only finance staff can void a retention release.");
     const { id, reason } = z.object({ id: z.string(), reason: z.string().trim().min(3, "Give a reason for voiding this release.") }).parse(formObject(fd));
+    await assertRecord(user, "retentionRelease", id);
     return db.$transaction(async (tx) => {
       const r = await tx.retentionRelease.findUniqueOrThrow({ where: { id }, include: { subcontract: true } });
       await lock(tx, r.subcontractId);

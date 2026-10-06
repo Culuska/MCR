@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireProject } from "@/lib/scope";
 import { DeleteButton } from "@/components/DeleteButton";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -12,6 +13,7 @@ import { Bar, Kpi, PageHead, Pill, Sample, clean } from "@/components/ui";
 export default async function ProjectDetail({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRead("projects");
   const { id } = await params;
+  await requireProject(user, id); // a project you cannot see looks like one that does not exist
   const exists = await db.project.findUnique({ where: { id }, select: { id: true } });
   if (!exists) notFound();
 

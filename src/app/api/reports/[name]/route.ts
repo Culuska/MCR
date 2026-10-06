@@ -1,4 +1,6 @@
 import { getUser } from "@/lib/auth";
+import { scopeOf } from "@/lib/scope";
+import { allows } from "@/lib/scope-rules";
 import { canRead } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { REPORTS, buildReport, toCsv } from "@/lib/reports";
@@ -15,12 +17,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ name: st
 
   const { name } = await params;
   const q = new URL(req.url).searchParams;
+  // People limited to some projects may run only the project reports, and only for their projects.
+  const scope = await scopeOf(user);
+  if (!scope.all) {
+    if (!REPORTS.find((r) => r.key === name)?.scoped) return new Response("Your access does not include company-wide reports.", { status: 403 });
+    const asked = q.get("project");
+    if (asked && !allows(scope, asked)) return new Response("Not found.", { status: 404 });
+  }
   const parse = (v: string | null, end = false) => {
     if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return undefined;
     const d = new Date(v + (end ? "T23:59:59.999Z" : "T00:00:00.000Z"));
     return Number.isNaN(d.getTime()) ? undefined : d;
   };
-  const report = await buildReport(name, { from: parse(q.get("from")), to: parse(q.get("to"), true), projectId: q.get("project") || undefined, compare: name === "profit-loss" ? (q.get("compare") === "prev" ? new Date(0) : undefined) : parseDay(q.get("compare")) });
+  const report = await buildReport(name, { from: parse(q.get("from")), to: parse(q.get("to"), true), projectId: q.get("project") || undefined, scope, compare: name === "profit-loss" ? (q.get("compare") === "prev" ? new Date(0) : undefined) : parseDay(q.get("compare")) });
   if (!report) return new Response("Unknown report.", { status: 404 });
 
   const stamp = new Date().toISOString().slice(0, 10);

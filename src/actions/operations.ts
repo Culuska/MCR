@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { assertProject, assertRecord } from "@/lib/scope";
 import { z } from "zod";
 import { db, type Tx } from "@/lib/db";
 import { requireWrite } from "@/lib/auth";
@@ -42,6 +43,8 @@ export async function saveTask(_: FormState, fd: FormData): Promise<FormState> {
   return run(async () => {
     const user = await requireWrite("operations");
     const v = taskSchema.parse(formObject(fd));
+    await assertProject(user, v.projectId);
+    if (v.id) await assertRecord(user, "task", v.id);
     if (v.startDate && v.dueDate < v.startDate) throw new ActionError("The due date cannot be before the start date.");
     return db.$transaction(async (tx) => {
       const base = { projectId: v.projectId, title: v.title, description: v.description ?? null, assigneeId: v.assigneeId ?? null, startDate: v.startDate ?? null, dueDate: v.dueDate, priority: v.priority, estimatedCost: v.estimatedCost == null ? null : D(v.estimatedCost), notes: v.notes ?? null };
@@ -80,6 +83,7 @@ export async function updateTaskProgress(_: FormState, fd: FormData): Promise<Fo
   return run(async () => {
     const user = await requireWrite("operations");
     const v = progressSchema.parse(formObject(fd));
+    await assertRecord(user, "task", v.id);
     return db.$transaction(async (tx) => {
       const t = await tx.task.findUniqueOrThrow({ where: { id: v.id } });
       const next = rules(() => afterProgress(t, v.completion));
@@ -95,6 +99,7 @@ export async function setTaskState(_: FormState, fd: FormData): Promise<FormStat
   return run(async () => {
     const user = await requireWrite("operations");
     const { id, to, reason } = z.object({ id: z.string(), to: z.enum(["BLOCK", "UNBLOCK", "CANCEL", "REOPEN"]), reason: optionalText }).parse(formObject(fd));
+    await assertRecord(user, "task", id);
     return db.$transaction(async (tx) => {
       const t = await tx.task.findUniqueOrThrow({ where: { id } });
       const note = (extra?: string | null) => (extra ? `${t.notes ? t.notes + " | " : ""}${iso(new Date())}: ${extra}` : t.notes);
@@ -135,6 +140,7 @@ export async function saveSiteReport(_: FormState, fd: FormData): Promise<FormSt
     const user = await requireWrite("operations");
     const raw = formObject(fd);
     const v = reportSchema.parse(raw);
+    await assertProject(user, v.projectId);
     if (v.date > endOfToday()) throw new ActionError("You cannot write a report for a future date.");
 
     const issues: { kind: keyof typeof IssueKind; description: string; daysLost: number }[] = [];
@@ -187,6 +193,7 @@ export async function reviewReport(_: FormState, fd: FormData): Promise<FormStat
     const user = await requireWrite("operations");
     if (user.role !== "PROJECT_MANAGER" && user.role !== "SUPER_ADMIN") throw new ActionError("A project manager reviews site reports.");
     const { id } = z.object({ id: z.string() }).parse(formObject(fd));
+    await assertRecord(user, "siteReport", id);
     return db.$transaction(async (tx) => {
       const r = await tx.siteReport.findUniqueOrThrow({ where: { id }, include: { project: true } });
       if (r.status === "REVIEWED") throw new ActionError("That report has already been reviewed.");
@@ -210,6 +217,7 @@ export async function addIssue(_: FormState, fd: FormData): Promise<FormState> {
   return run(async () => {
     const user = await requireWrite("operations");
     const v = issueSchema.parse(formObject(fd));
+    await assertProject(user, v.projectId);
     if (v.date > endOfToday()) throw new ActionError("The date cannot be in the future.");
     return db.$transaction(async (tx) => {
       const p = await liveProject(tx, v.projectId);
@@ -230,6 +238,7 @@ export async function resolveIssue(_: FormState, fd: FormData): Promise<FormStat
   return run(async () => {
     const user = await requireWrite("operations");
     const { id, reason } = z.object({ id: z.string(), reason: z.string().trim().min(3, "Say how it was resolved.") }).parse(formObject(fd));
+    await assertRecord(user, "siteIssue", id);
     return db.$transaction(async (tx) => {
       const i = await tx.siteIssue.findUniqueOrThrow({ where: { id }, include: { project: true } });
       if (i.resolved) throw new ActionError(`${i.number} is already resolved.`);

@@ -1,4 +1,6 @@
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
+import { projectWhere, scopeOf } from "@/lib/scope";
 import { saveExpense } from "@/actions/expenses";
 import { ActionForm, Submit } from "@/components/ActionForm";
 import { Field } from "@/components/ui";
@@ -7,11 +9,13 @@ import { toDateInput } from "@/lib/money";
 import type { Expense } from "@/generated/prisma/client";
 
 export async function ExpenseForm({ expense, projectId }: { expense?: Expense; projectId?: string }) {
+  const user = await requireUser();
+  const scope = await scopeOf(user);
   const [projects, suppliers, assets, tasks] = await Promise.all([
-    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } }, orderBy: { code: "asc" } }),
+    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, ...projectWhere(scope) }, orderBy: { code: "asc" } }),
     db.supplier.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
     db.asset.findMany({ where: { active: true }, orderBy: { code: "asc" } }),
-    db.task.findMany({ where: { status: { notIn: ["DONE", "CANCELLED"] } }, include: { project: true }, orderBy: [{ project: { code: "asc" } }, { number: "asc" }] }),
+    db.task.findMany({ where: { status: { notIn: ["DONE", "CANCELLED"] }, ...(scope.all ? {} : { projectId: { in: scope.ids } }) }, include: { project: true }, orderBy: [{ project: { code: "asc" } }, { number: "asc" }] }),
   ]);
   return (
     <ActionForm action={saveExpense} goTo={expense ? `/expenses/${expense.id}` : "/expenses"}>
@@ -20,9 +24,9 @@ export async function ExpenseForm({ expense, projectId }: { expense?: Expense; p
         <div className="fields">
           <Field name="date" label="Date"><input id="date" name="date" type="date" required defaultValue={toDateInput(expense?.date ?? new Date())} /></Field>
           <Field name="amount" label="Amount (USD)"><input id="amount" name="amount" type="number" step="0.01" min="0.01" inputMode="decimal" required defaultValue={expense?.amount.toString()} /></Field>
-          <Field name="projectId" label="Project" hint="Leave on overhead for office rent, utilities and other company costs.">
-            <select id="projectId" name="projectId" defaultValue={expense?.projectId ?? projectId ?? ""}>
-              <option value="">General overhead (no project)</option>
+          <Field name="projectId" label="Project" hint={scope.all ? "Leave on overhead for office rent, utilities and other company costs." : "Choose the project this cost belongs to."}>
+            <select id="projectId" name="projectId" required={!scope.all} defaultValue={expense?.projectId ?? projectId ?? ""}>
+              {scope.all ? <option value="">General overhead (no project)</option> : <option value="" disabled>Choose a project</option>}
               {projects.map((p) => <option key={p.id} value={p.id}>{p.code} {p.name.replace(" (sample)", "")}</option>)}
             </select>
           </Field>

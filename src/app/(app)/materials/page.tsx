@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { currentScope, onProject, projectWhere } from "@/lib/scope";
 import { DeleteButton } from "@/components/DeleteButton";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
@@ -34,7 +35,7 @@ export default async function Materials({ searchParams }: { searchParams: Promis
 async function Stock({ role, edit }: { role: Parameters<typeof canWrite>[0]; edit?: string }) {
   const writer = canWrite(role, "stock");
   const isFinance = APPROVERS.includes(role);
-  const [s, projects] = await Promise.all([stockSummary(), db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } }, orderBy: { code: "asc" } })]);
+  const [s, projects] = await Promise.all([stockSummary(), db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, ...projectWhere(await currentScope()) }, orderBy: { code: "asc" } })]);
   const low = s.rows.filter((r) => isLow(r.onHand, r.reorderLevel));
   const editing = edit ? s.rows.find((r) => r.id === edit) : undefined;
 
@@ -140,7 +141,7 @@ async function Stock({ role, edit }: { role: Parameters<typeof canWrite>[0]; edi
 
 async function Movements({ role }: { role: Parameters<typeof canWrite>[0] }) {
   const isFinance = APPROVERS.includes(role);
-  const rows = await db.stockMovement.findMany({ include: { material: true, project: true }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 60 });
+  const rows = await db.stockMovement.findMany({ where: onProject(await currentScope()), include: { material: true, project: true }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 60 });
   if (!rows.length) return <Empty title="No stock movements yet">Receipts, issues to projects and corrections will be listed here.</Empty>;
   return (
     <section className="panel"><div className="tablewrap"><table>
@@ -161,9 +162,9 @@ async function Movements({ role }: { role: Parameters<typeof canWrite>[0] }) {
 async function Orders({ role }: { role: Parameters<typeof canWrite>[0] }) {
   const writer = canWrite(role, "purchasing");
   const [orders, suppliers, projects, materials] = await Promise.all([
-    db.purchaseOrder.findMany({ include: { supplier: true, project: true, lines: true }, orderBy: [{ orderDate: "desc" }, { number: "desc" }] }),
+    db.purchaseOrder.findMany({ where: onProject(await currentScope()), include: { supplier: true, project: true, lines: true }, orderBy: [{ orderDate: "desc" }, { number: "desc" }] }),
     db.supplier.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
-    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } }, orderBy: { code: "asc" } }),
+    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, ...projectWhere(await currentScope()) }, orderBy: { code: "asc" } }),
     db.material.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
   ]);
   const open = orders.filter((o) => o.status === "ORDERED" || o.status === "PART_RECEIVED");

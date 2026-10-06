@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { onProject, projectWhere, scopeOf } from "@/lib/scope";
 import { DeleteButton } from "@/components/DeleteButton";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
@@ -14,9 +15,10 @@ export default async function Customers({ searchParams }: { searchParams: Promis
   const user = await requireRead("customers");
   const { edit } = await searchParams;
   const writer = canWrite(user.role, "customers");
+  const scope = await scopeOf(user);
   const customers = await db.customer.findMany({
     orderBy: { name: "asc" },
-    include: { projects: true, invoices: { where: { status: { not: "VOID" } }, include: { payments: { where: { voided: false } } } } },
+    include: { projects: { where: projectWhere(scope) }, invoices: { where: { status: { not: "VOID" }, ...onProject(scope) }, include: { payments: { where: { voided: false } } } } },
   });
   const editing = edit ? customers.find((c) => c.id === edit) : undefined;
 

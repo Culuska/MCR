@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireCompanyWide } from "@/lib/scope";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
 import { AGE_BUCKETS, cashFlow, companyPosition, ledgerBalances, payables, receivables, subcontractFigures } from "@/lib/finance";
@@ -17,7 +18,7 @@ const TABS = [
 ];
 
 export default async function Finance({ searchParams }: { searchParams: Promise<{ tab?: string; account?: string; project?: string; asof?: string; compare?: string; from?: string; to?: string }> }) {
-  await requireRead("finance");
+  await requireCompanyWide(await requireRead("finance"), "finance");
   const sp = await searchParams;
   const tab = TABS.some((t) => t.key === sp.tab) ? sp.tab! : "statements";
 

@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import type { Role } from "@/generated/prisma/client";
 import { canRead, canWrite, type Module } from "@/lib/permissions";
 import { ActionError } from "@/lib/errors";
+import { seesAll, type ScopeSetting } from "@/lib/scope-rules";
 
 const COOKIE = "mcr_session";
 const MAX_AGE = 60 * 60 * 12; // 12 hours
@@ -35,7 +36,7 @@ export async function destroySession() {
   (await cookies()).delete(COOKIE);
 }
 
-export type SessionUser = { id: string; name: string; email: string; role: Role };
+export type SessionUser = { id: string; name: string; email: string; role: Role; projectScope: ScopeSetting };
 
 // Reads the cookie and re-checks the user in the database, so a deactivated user loses access at once.
 export async function getUser(): Promise<SessionUser | null> {
@@ -54,7 +55,7 @@ export async function getUser(): Promise<SessionUser | null> {
   if (!u || !u.active) return null;
   // A password change or "sign out everywhere" ends every session issued before it.
   if (issuedAt < Math.floor(u.sessionsValidFrom.getTime() / 1000)) return null;
-  return { id: u.id, name: u.name, email: u.email, role: u.role };
+  return { id: u.id, name: u.name, email: u.email, role: u.role, projectScope: u.projectScope };
 }
 
 export async function requireUser(): Promise<SessionUser> {
@@ -63,9 +64,12 @@ export async function requireUser(): Promise<SessionUser> {
   return u;
 }
 
+// The ledger and payroll are not split by project, so people limited to some projects never get them.
+const COMPANY_WIDE: Module[] = ["finance", "payroll"];
+
 export async function requireRead(m: Module): Promise<SessionUser> {
   const u = await requireUser();
-  if (!canRead(u.role, m)) redirect("/?denied=" + m);
+  if (!canRead(u.role, m) || (COMPANY_WIDE.includes(m) && !seesAll(u.role, u.projectScope))) redirect("/?denied=" + m);
   return u;
 }
 
@@ -74,6 +78,7 @@ export async function requireWrite(m: Module): Promise<SessionUser> {
   const u = await getUser();
   if (!u) throw new ActionError("Your session has expired. Sign in again.");
   if (!canWrite(u.role, m)) throw new ActionError("Your role does not allow this change.");
+  if (COMPANY_WIDE.includes(m) && !seesAll(u.role, u.projectScope)) throw new ActionError("Your access is limited to your assigned projects.");
   return u;
 }
 

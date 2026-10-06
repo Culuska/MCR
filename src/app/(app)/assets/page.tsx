@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { currentScope, onProject, projectWhere } from "@/lib/scope";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
 import { canWrite } from "@/lib/permissions";
@@ -39,7 +40,7 @@ export default async function Assets({ searchParams }: { searchParams: Promise<{
 }
 
 async function Register({ writer }: { writer: boolean }) {
-  const rows = await assetCosting();
+  const rows = await assetCosting(await currentScope());
   const all = await db.asset.count({ where: { active: false } });
   return (
     <>
@@ -69,8 +70,8 @@ async function Register({ writer }: { writer: boolean }) {
 async function Usage({ logger, asset }: { logger: boolean; asset?: string }) {
   const [assets, projects, logs] = await Promise.all([
     db.asset.findMany({ where: { active: true, status: { notIn: ["RETIRED"] } }, orderBy: { code: "asc" } }),
-    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } }, orderBy: { code: "asc" } }),
-    db.assetUsage.findMany({ where: { assetId: asset || undefined }, include: { asset: true, project: true }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 40 }),
+    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, ...projectWhere(await currentScope()) }, orderBy: { code: "asc" } }),
+    db.assetUsage.findMany({ where: { assetId: asset || undefined, ...onProject(await currentScope()) }, include: { asset: true, project: true }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 40 }),
   ]);
   return (
     <>
@@ -123,8 +124,8 @@ async function Rentals({ writer }: { writer: boolean }) {
   const [assets, suppliers, projects, rentals] = await Promise.all([
     db.asset.findMany({ where: { active: true, status: { not: "RETIRED" } }, orderBy: { code: "asc" } }),
     db.supplier.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
-    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } }, orderBy: { code: "asc" } }),
-    db.rental.findMany({ include: { asset: true, supplier: true, project: true, expense: true }, orderBy: { startDate: "desc" } }),
+    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, ...projectWhere(await currentScope()) }, orderBy: { code: "asc" } }),
+    db.rental.findMany({ where: onProject(await currentScope()), include: { asset: true, supplier: true, project: true, expense: true }, orderBy: { startDate: "desc" } }),
   ]);
   const live = rentals.filter((r) => r.status === "ACTIVE");
   return (
@@ -188,7 +189,7 @@ async function Rentals({ writer }: { writer: boolean }) {
 async function Maintenance({ writer }: { writer: boolean }) {
   const [assets, projects, records] = await Promise.all([
     db.asset.findMany({ where: { active: true }, orderBy: { code: "asc" } }),
-    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } }, orderBy: { code: "asc" } }),
+    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, ...projectWhere(await currentScope()) }, orderBy: { code: "asc" } }),
     db.maintenanceRecord.findMany({ include: { asset: true, expense: true }, orderBy: { date: "desc" }, take: 40 }),
   ]);
   const due = assets.filter((a) => a.nextServiceDate && daysUntil(a.nextServiceDate) < 30 && a.status !== "RETIRED").sort((a, b) => a.nextServiceDate!.getTime() - b.nextServiceDate!.getTime());
@@ -234,7 +235,7 @@ async function Maintenance({ writer }: { writer: boolean }) {
 }
 
 async function Costs() {
-  const [rows, fuel] = await Promise.all([assetCosting(), fuelByProject()]);
+  const [rows, fuel] = await Promise.all([currentScope().then((sc) => assetCosting(sc)), currentScope().then((sc) => fuelByProject(sc))]);
   const worked = rows.filter((r) => r.cost.greaterThan(0) || r.units.greaterThan(0));
   const total = sum(rows.map((r) => r.cost));
   return (

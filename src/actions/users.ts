@@ -80,3 +80,28 @@ export async function resetPassword(_: FormState, fd: FormData): Promise<FormSta
     return `Password reset for ${u.name}`;
   });
 }
+
+const accessSchema = z.object({ id: z.string(), scope: z.enum(["DEFAULT", "ALL", "ASSIGNED"], { error: "Choose how much access." }) });
+
+// Which projects a person may see. Project Managers and Site Supervisors default to assigned projects only; anyone can be given all or limited.
+export async function setProjectAccess(_: FormState, fd: FormData): Promise<FormState> {
+  return run(async () => {
+    const admin = await adminOnly();
+    const v = accessSchema.parse(formObject(fd));
+    const wanted = [...new Set(fd.getAll("project").map(String))];
+    const user = await db.user.findUniqueOrThrow({ where: { id: v.id } });
+    const found = await db.project.findMany({ where: { id: { in: wanted } }, select: { id: true, code: true } });
+    if (found.length !== wanted.length) throw new ActionError("One of the chosen projects does not exist.");
+    const before = await db.projectAccess.findMany({ where: { userId: v.id }, include: { project: { select: { code: true } } } });
+    await db.$transaction([
+      db.user.update({ where: { id: v.id }, data: { projectScope: v.scope } }),
+      db.projectAccess.deleteMany({ where: { userId: v.id } }),
+      db.projectAccess.createMany({ data: found.map((p) => ({ userId: v.id, projectId: p.id })) }),
+    ]);
+    await audit({ userId: admin.id, action: "user.project_access", entity: "User", entityId: v.id,
+      summary: `${admin.name} set project access for ${user.name}: ${v.scope === "ALL" ? "all projects" : v.scope === "DEFAULT" ? "role default" : "assigned only"}${found.length ? ` (${found.map((p) => p.code).join(", ")})` : ""}`,
+      before: { scope: user.projectScope, projects: before.map((b) => b.project.code) }, after: { scope: v.scope, projects: found.map((p) => p.code) } });
+    revalidatePath("/", "layout");
+    return `Project access saved for ${user.name}`;
+  });
+}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { onProject, scopeOf } from "@/lib/scope";
 import { DeleteButton } from "@/components/DeleteButton";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
@@ -15,11 +16,12 @@ export default async function Suppliers({ searchParams }: { searchParams: Promis
   const user = await requireRead("suppliers");
   const { edit } = await searchParams;
   const writer = canWrite(user.role, "suppliers");
+  const scope = await scopeOf(user);
   const suppliers = await db.supplier.findMany({
     orderBy: { name: "asc" },
-    include: { expenses: { where: { status: { in: ["APPROVED", "PAID"] } }, include: { payments: { where: { voided: false } } } } },
+    include: { expenses: { where: { status: { in: ["APPROVED", "PAID"] }, ...onProject(scope) }, include: { payments: { where: { voided: false } } } } },
   });
-  const subs = await subcontractFigures();
+  const subs = await subcontractFigures(undefined, scope);
   const subOwed = (id: string) => sum(subs.filter((x) => x.sub.supplierId === id).map((x) => x.unpaid));
   const retention = (id: string) => sum(subs.filter((x) => x.sub.supplierId === id).map((x) => x.retentionHeld));
   const editing = edit ? suppliers.find((s) => s.id === edit) : undefined;

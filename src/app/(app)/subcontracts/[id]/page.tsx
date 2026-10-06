@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireRecord } from "@/lib/scope";
 import { DeleteButton } from "@/components/DeleteButton";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -19,6 +20,7 @@ const small = { padding: "5px 7px", border: "1px solid var(--line)", borderRadiu
 export default async function SubcontractPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRead("subcontracts");
   const { id } = await params;
+  await requireRecord(user, "subcontract", id);
   const base = await db.subcontract.findUnique({ where: { id }, include: { supplier: true, project: true, variations: { orderBy: { createdAt: "asc" } }, schedule: { orderBy: { dueDate: "asc" } }, certificates: { orderBy: { seq: "asc" } }, releases: { orderBy: { date: "asc" } } } });
   if (!base) notFound();
 

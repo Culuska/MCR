@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { idsOf, type Scope } from "@/lib/scope-rules";
 import { D, ZERO, sum, type Money } from "@/lib/money";
 import { daysOverdue, forecastEnd, isOverdue, projectProgress } from "@/lib/operations";
 
@@ -29,8 +30,9 @@ export async function siteDay(projectId: string, date: Date) {
 }
 
 // One line per active project for the daily dashboard.
-export async function operationsOverview(date: Date) {
-  const projects = await db.project.findMany({ where: { status: "ACTIVE" }, orderBy: { code: "asc" } });
+export async function operationsOverview(date: Date, scope: Scope = { all: true }) {
+  const ids = idsOf(scope);
+  const projects = await db.project.findMany({ where: { status: "ACTIVE", id: ids ? { in: ids } : undefined }, orderBy: { code: "asc" } });
   const out = [];
   for (const p of projects) {
     const [day, report, tasks, issues] = await Promise.all([
@@ -58,15 +60,17 @@ export async function operationsOverview(date: Date) {
 }
 
 // What each task has actually cost so far: approved and paid expenses tagged to it.
-export async function taskCosts(projectId?: string): Promise<Map<string, Money>> {
-  const g = await db.expense.groupBy({ by: ["taskId"], where: { taskId: { not: null }, status: { in: ["APPROVED", "PAID"] }, task: projectId ? { projectId } : undefined }, _sum: { amount: true } });
+export async function taskCosts(projectId?: string, scope: Scope = { all: true }): Promise<Map<string, Money>> {
+  const ids = idsOf(scope);
+  const g = await db.expense.groupBy({ by: ["taskId"], where: { taskId: { not: null }, status: { in: ["APPROVED", "PAID"] }, task: projectId ? { projectId } : ids ? { projectId: { in: ids } } : undefined }, _sum: { amount: true } });
   return new Map(g.map((x) => [x.taskId as string, D(x._sum.amount)]));
 }
 
 // Alerts for the Overview: overdue and blocked tasks, open delays, and missing daily reports.
-export async function siteAlerts(previousWorkingDay: Date, today: Date) {
+export async function siteAlerts(previousWorkingDay: Date, today: Date, scope: Scope = { all: true }) {
+  const ids = idsOf(scope);
   const out: { tone: "bad" | "warn"; text: string; href: string }[] = [];
-  const projects = await db.project.findMany({ where: { status: "ACTIVE" }, orderBy: { code: "asc" }, include: { tasks: true, siteIssues: { where: { resolved: false } } } });
+  const projects = await db.project.findMany({ where: { status: "ACTIVE", id: ids ? { in: ids } : undefined }, orderBy: { code: "asc" }, include: { tasks: true, siteIssues: { where: { resolved: false } } } });
   for (const p of projects) {
     const open = p.tasks.filter((t) => t.status !== "DONE" && t.status !== "CANCELLED");
     const late = open.filter((t) => isOverdue(t, today)).sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());

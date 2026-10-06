@@ -1,6 +1,7 @@
 "use server";
 
 import { createHash } from "node:crypto";
+import { canSeeEntity } from "@/lib/scope";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -20,6 +21,7 @@ export async function uploadAttachment(_: FormState, fd: FormData): Promise<Form
     const entityId = String(raw.entityId ?? "");
     if (!isEntity(entity)) throw new ActionError("That kind of record cannot have attachments.");
     const user = await requireWrite(ENTITIES[entity].module);
+    if (!(await canSeeEntity(user, entity, entityId))) throw new ActionError("You do not have access to that record.");
     const name = await describe(entity, entityId);
     if (!name) throw new ActionError(`That ${ENTITIES[entity].noun} does not exist.`);
 
@@ -52,6 +54,7 @@ export async function removeAttachment(_: FormState, fd: FormData): Promise<Form
     const a = await db.attachment.findUniqueOrThrow({ where: { id } });
     if (!isEntity(a.entity)) throw new ActionError("That attachment is not on a record that can be changed.");
     const user = await requireWrite(ENTITIES[a.entity].module);
+    if (!(await canSeeEntity(user, a.entity, a.entityId))) throw new ActionError("You do not have access to that record.");
     if (a.removed) throw new ActionError("That attachment is already removed.");
     if (a.uploadedById !== user.id && !APPROVERS.includes(user.role)) throw new ActionError("Only the person who attached it, or finance staff, can remove it.");
     await db.attachment.update({ where: { id }, data: { removed: true, removedById: user.id, removedAt: new Date(), removeReason: reason } });

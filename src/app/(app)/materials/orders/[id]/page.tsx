@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireRecord } from "@/lib/scope";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
@@ -14,6 +15,7 @@ import { D, fmt2, fmtDate, sum, toDateInput } from "@/lib/money";
 export default async function OrderPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRead("purchasing");
   const { id } = await params;
+  await requireRecord(user, "purchaseOrder", id);
   const po = await db.purchaseOrder.findUnique({
     where: { id },
     include: {

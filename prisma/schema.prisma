@@ -96,15 +96,18 @@ enum JournalStatus {
 }
 
 model User {
-  id                String   @id @default(cuid())
-  email             String   @unique
+  id                String          @id @default(cuid())
+  email             String          @unique
   name              String
   passwordHash      String
-  role              Role     @default(VIEWER)
-  active            Boolean  @default(true)
-  createdAt         DateTime @default(now())
+  role              Role            @default(VIEWER)
+  active            Boolean         @default(true)
+  createdAt         DateTime        @default(now())
   // Sessions issued before this moment are refused. Moved forward when the password changes or on "sign out everywhere".
-  sessionsValidFrom DateTime @default(now())
+  sessionsValidFrom DateTime        @default(now())
+  // Which projects this person may see: the default for their role, every project, or only the ones assigned to them.
+  projectScope      ProjectScope    @default(DEFAULT)
+  projectAccess     ProjectAccess[]
 
   passwordResets   PasswordReset[]
   managedProjects  Project[]       @relation("ProjectManager")
@@ -176,6 +179,7 @@ model Project {
   tasks            Task[]
   siteReports      SiteReport[]
   siteIssues       SiteIssue[]
+  access           ProjectAccess[]
 }
 
 model BudgetLine {
@@ -1043,4 +1047,24 @@ model PasswordReset {
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
+}
+
+enum ProjectScope {
+  DEFAULT // Project Managers and Site Supervisors: assigned projects. Everyone else: all projects.
+  ALL
+  ASSIGNED
+}
+
+// One row per person per project they are assigned to. A project's own manager is always included as well.
+model ProjectAccess {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@index([projectId])
 }

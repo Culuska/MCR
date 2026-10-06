@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { assertProject, assertRecord, scopeOf } from "@/lib/scope";
 import { z } from "zod";
 import { db, type Tx } from "@/lib/db";
 import { requireWrite } from "@/lib/auth";
@@ -99,6 +100,7 @@ export async function createPurchaseOrder(_: FormState, fd: FormData): Promise<F
     const user = await requireWrite("purchasing");
     const raw = formObject(fd);
     const v = orderSchema.parse(raw);
+    if (!(await scopeOf(user)).all && !v.projectId) throw new ActionError("Choose the project this is for."); if (v.projectId) await assertProject(user, v.projectId);
     if (v.expectedDate && v.expectedDate < v.orderDate) throw new ActionError("The expected delivery cannot be before the order date.");
 
     const lines: { materialId: string; quantity: number; unitPrice: number }[] = [];
@@ -136,6 +138,7 @@ export async function transitionOrder(_: FormState, fd: FormData): Promise<FormS
   return run(async () => {
     const user = await requireWrite("purchasing");
     const { id, to } = z.object({ id: z.string(), to: z.enum(["ORDER", "CANCEL"]) }).parse(formObject(fd));
+    await assertRecord(user, "purchaseOrder", id);
     return db.$transaction(async (tx) => {
       const po = await tx.purchaseOrder.findUniqueOrThrow({ where: { id }, include: { receipts: { where: { reversed: false } } } });
       if (to === "ORDER") {
@@ -164,6 +167,7 @@ export async function receiveGoods(_: FormState, fd: FormData): Promise<FormStat
     const user = await requireWrite("purchasing");
     const raw = formObject(fd);
     const v = receiveSchema.parse(raw);
+    await assertRecord(user, "purchaseOrder", v.orderId);
     if (v.receivedDate > endOfToday()) throw new ActionError("The delivery date cannot be in the future.");
 
     return db.$transaction(async (tx) => {
@@ -223,6 +227,7 @@ export async function reverseReceipt(_: FormState, fd: FormData): Promise<FormSt
     const user = await requireWrite("purchasing");
     if (!APPROVERS.includes(user.role)) throw new ActionError("Only finance staff can reverse a goods receipt.");
     const { id, reason } = z.object({ id: z.string(), reason: z.string().trim().min(3, "Give a reason for reversing this receipt.") }).parse(formObject(fd));
+    await assertRecord(user, "goodsReceipt", id);
     return db.$transaction(async (tx) => {
       const g = await tx.goodsReceipt.findUniqueOrThrow({ where: { id }, include: { lines: { include: { material: true } }, order: { include: { lines: true } }, expense: { include: { payments: { where: { voided: false } } } } } });
       if (g.reversed) throw new ActionError(`${g.number} is already reversed.`);
@@ -262,6 +267,7 @@ export async function issueMaterial(_: FormState, fd: FormData): Promise<FormSta
   return run(async () => {
     const user = await requireWrite("stock");
     const v = issueSchema.parse(formObject(fd));
+    await assertProject(user, v.projectId);
     if (v.date > endOfToday()) throw new ActionError("The date cannot be in the future.");
     return db.$transaction(async (tx) => {
       const project = await openProject(tx, v.projectId);
@@ -287,6 +293,7 @@ export async function voidIssue(_: FormState, fd: FormData): Promise<FormState> 
     const user = await requireWrite("stock");
     if (!APPROVERS.includes(user.role)) throw new ActionError("Only finance staff can void a stock issue.");
     const { id, reason } = z.object({ id: z.string(), reason: z.string().trim().min(3, "Give a reason for voiding this issue.") }).parse(formObject(fd));
+    await assertRecord(user, "stockMovement", id);
     return db.$transaction(async (tx) => {
       const mv = await tx.stockMovement.findUniqueOrThrow({ where: { id }, include: { material: true, project: true } });
       if (mv.type !== "ISSUE") throw new ActionError("Only issues to a project can be voided here.");

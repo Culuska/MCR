@@ -1,4 +1,6 @@
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
+import { projectWhere, scopeOf } from "@/lib/scope";
 import { saveInvoice } from "@/actions/invoices";
 import { ActionForm, Submit } from "@/components/ActionForm";
 import { Field } from "@/components/ui";
@@ -6,9 +8,10 @@ import { toDateInput } from "@/lib/money";
 import type { Invoice } from "@/generated/prisma/client";
 
 export async function InvoiceForm({ invoice, projectId }: { invoice?: Invoice; projectId?: string }) {
+  const scope = await scopeOf(await requireUser());
   const [customers, projects] = await Promise.all([
     db.customer.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
-    db.project.findMany({ where: { status: { not: "CANCELLED" } }, orderBy: { code: "asc" }, include: { customer: true } }),
+    db.project.findMany({ where: { status: { not: "CANCELLED" }, ...projectWhere(scope) }, orderBy: { code: "asc" }, include: { customer: true } }),
   ]);
   const preset = projects.find((p) => p.id === (invoice?.projectId ?? projectId));
   const due = new Date(); due.setDate(due.getDate() + 30);

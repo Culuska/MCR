@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { canSeeEntity } from "@/lib/scope";
 import { getUser } from "@/lib/auth";
 import { canRead } from "@/lib/permissions";
 import { ENTITIES, isEntity } from "@/lib/attachments";
@@ -16,6 +17,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const a = await db.attachment.findUnique({ where: { id } });
   if (!a || a.removed || !isEntity(a.entity) || !canRead(user.role, ENTITIES[a.entity].module)) return notFound();
 
+  if (!(await canSeeEntity(user, a.entity, a.entityId))) return notFound(); // a record on a project you cannot see
   let bytes: Buffer;
   try { bytes = await getFile(a.storageKey); } catch { return notFound(); }
 

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { assertProject, assertRecord, scopeOf } from "@/lib/scope";
 import { z } from "zod";
 import { db, type Tx } from "@/lib/db";
 import { requireWrite } from "@/lib/auth";
@@ -76,6 +77,7 @@ export async function assignAsset(_: FormState, fd: FormData): Promise<FormState
   return run(async () => {
     const user = await requireWrite("assets");
     const v = assignSchema.parse(formObject(fd));
+    await assertProject(user, v.projectId);
     if (v.endDate && v.endDate < v.startDate) throw new ActionError("The end date cannot be before the start date.");
     return db.$transaction(async (tx) => {
       const asset = await tx.asset.findUniqueOrThrow({ where: { id: v.assetId } });
@@ -99,6 +101,7 @@ export async function releaseAsset(_: FormState, fd: FormData): Promise<FormStat
   return run(async () => {
     const user = await requireWrite("assets");
     const v = z.object({ id: z.string(), endDate: date }).parse(formObject(fd));
+    await assertRecord(user, "assetAssignment", v.id);
     return db.$transaction(async (tx) => {
       const a = await tx.assetAssignment.findUniqueOrThrow({ where: { id: v.id }, include: { asset: true, project: true } });
       if (a.endDate) throw new ActionError("That assignment has already ended.");
@@ -126,6 +129,7 @@ export async function logUsage(_: FormState, fd: FormData): Promise<FormState> {
   return run(async () => {
     const user = await requireWrite("usage");
     const v = usageSchema.parse(formObject(fd));
+    if (!(await scopeOf(user)).all && !v.projectId) throw new ActionError("Choose the project this is for."); if (v.projectId) await assertProject(user, v.projectId);
     if (v.date > endOfToday()) throw new ActionError("You cannot log work for a future date.");
     if (v.endReading < v.startReading) throw new ActionError("The ending reading cannot be lower than the starting reading.");
 
@@ -173,6 +177,7 @@ export async function createRental(_: FormState, fd: FormData): Promise<FormStat
   return run(async () => {
     const user = await requireWrite("assets");
     const v = rentalSchema.parse(formObject(fd));
+    if (!(await scopeOf(user)).all && !v.projectId) throw new ActionError("Choose the project this is for."); if (v.projectId) await assertProject(user, v.projectId);
     if (v.endDate < v.startDate) throw new ActionError("The hire cannot end before it starts.");
     return db.$transaction(async (tx) => {
       const asset = await tx.asset.findUniqueOrThrow({ where: { id: v.assetId } });
@@ -199,6 +204,7 @@ export async function raiseRentalExpense(_: FormState, fd: FormData): Promise<Fo
   return run(async () => {
     const user = await requireWrite("assets");
     const { id } = z.object({ id: z.string() }).parse(formObject(fd));
+    await assertRecord(user, "rental", id);
     return db.$transaction(async (tx) => {
       const r = await tx.rental.findUniqueOrThrow({ where: { id }, include: { asset: true, supplier: true } });
       if (r.expenseId) throw new ActionError(`An expense has already been raised for ${r.number}.`);
@@ -224,6 +230,7 @@ export async function closeRental(_: FormState, fd: FormData): Promise<FormState
   return run(async () => {
     const user = await requireWrite("assets");
     const { id, to } = z.object({ id: z.string(), to: z.enum(["END", "CANCEL"]) }).parse(formObject(fd));
+    await assertRecord(user, "rental", id);
     return db.$transaction(async (tx) => {
       const r = await tx.rental.findUniqueOrThrow({ where: { id } });
       if (r.status !== "ACTIVE") throw new ActionError(`${r.number} is already ${r.status.toLowerCase()}.`);

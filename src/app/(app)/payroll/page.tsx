@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireCompanyWide } from "@/lib/scope";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
 import { canWrite } from "@/lib/permissions";
@@ -12,6 +13,7 @@ export const metadata = { title: "Payroll" };
 
 export default async function Payroll() {
   const user = await requireRead("payroll");
+  await requireCompanyWide(user, "payroll");
   const writer = canWrite(user.role, "payroll");
   const runs = await db.payrollRun.findMany({ orderBy: { periodEnd: "desc" }, include: { lines: true } });
 

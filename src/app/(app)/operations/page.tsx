@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { onProject, projectWhere, scopeOf } from "@/lib/scope";
+import { allows, type Scope } from "@/lib/scope-rules";
 import { DeleteButton } from "@/components/DeleteButton";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
@@ -23,21 +25,22 @@ export default async function Operations({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   const tab = TABS.some((t) => t.key === sp.tab) ? sp.tab! : "today";
   const writer = canWrite(user.role, "operations");
+  const scope = await scopeOf(user);
   return (
     <>
       <PageHead title="Site operations" sub="What happened on site, what is still to do, and what is holding work up" />
       <Tabs current={tab} items={TABS.map((t) => ({ ...t, href: `/operations?tab=${t.key}` }))} />
-      {tab === "today" && <Today date={sp.date} writer={writer} />}
-      {tab === "tasks" && <Tasks sp={sp} writer={writer} />}
-      {tab === "reports" && <Reports writer={writer} />}
-      {tab === "issues" && <Issues writer={writer} />}
+      {tab === "today" && <Today date={sp.date} writer={writer} scope={scope} />}
+      {tab === "tasks" && <Tasks sp={sp} writer={writer} scope={scope} />}
+      {tab === "reports" && <Reports writer={writer} scope={scope} />}
+      {tab === "issues" && <Issues writer={writer} scope={scope} />}
     </>
   );
 }
 
-async function Today({ date, writer }: { date?: string; writer: boolean }) {
+async function Today({ date, writer, scope }: { date?: string; writer: boolean; scope: Scope }) {
   const day = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(date + "T00:00:00Z") : todayUtc();
-  const rows = await operationsOverview(day);
+  const rows = await operationsOverview(day, scope);
   const isToday = day.getTime() === todayUtc().getTime();
   return (
     <>
@@ -84,16 +87,16 @@ async function Today({ date, writer }: { date?: string; writer: boolean }) {
   );
 }
 
-async function Tasks({ sp, writer }: { sp: SP; writer: boolean }) {
+async function Tasks({ sp, writer, scope }: { sp: SP; writer: boolean; scope: Scope }) {
   const today = todayUtc();
   const [tasks, projects, employees, costs] = await Promise.all([
     db.task.findMany({
-      where: { projectId: sp.project || undefined, status: sp.status && sp.status in TaskStatus ? (sp.status as keyof typeof TaskStatus) : undefined },
+      where: { projectId: sp.project && allows(scope, sp.project) ? sp.project : onProject(scope).projectId, status: sp.status && sp.status in TaskStatus ? (sp.status as keyof typeof TaskStatus) : undefined },
       include: { project: true, assignee: { select: { name: true } } }, orderBy: [{ dueDate: "asc" }, { number: "asc" }],
     }),
-    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } }, orderBy: { code: "asc" } }),
+    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, ...projectWhere(scope) }, orderBy: { code: "asc" } }),
     db.employee.findMany({ where: { active: true }, select: { id: true, name: true, position: true }, orderBy: { name: "asc" } }),
-    taskCosts(),
+    taskCosts(undefined, scope),
   ]);
   const editing = sp.edit ? tasks.find((t) => t.id === sp.edit) : undefined;
   const late = tasks.filter((t) => isOverdue(t, today));
@@ -179,8 +182,8 @@ async function Tasks({ sp, writer }: { sp: SP; writer: boolean }) {
   );
 }
 
-async function Reports({ writer }: { writer: boolean }) {
-  const reports = await db.siteReport.findMany({ include: { project: true, updates: true, issues: true }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 40 });
+async function Reports({ writer, scope }: { writer: boolean; scope: Scope }) {
+  const reports = await db.siteReport.findMany({ where: onProject(scope), include: { project: true, updates: true, issues: true }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 40 });
   const authors = new Map((await db.user.findMany({ select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   return (
     <>
@@ -201,11 +204,11 @@ async function Reports({ writer }: { writer: boolean }) {
   );
 }
 
-async function Issues({ writer }: { writer: boolean }) {
+async function Issues({ writer, scope }: { writer: boolean; scope: Scope }) {
   const [issues, projects, tasks] = await Promise.all([
-    db.siteIssue.findMany({ include: { project: true, task: true }, orderBy: [{ resolved: "asc" }, { date: "desc" }], take: 80 }),
-    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } }, orderBy: { code: "asc" } }),
-    db.task.findMany({ where: { status: { notIn: ["DONE", "CANCELLED"] } }, include: { project: true }, orderBy: [{ project: { code: "asc" } }, { number: "asc" }] }),
+    db.siteIssue.findMany({ where: onProject(scope), include: { project: true, task: true }, orderBy: [{ resolved: "asc" }, { date: "desc" }], take: 80 }),
+    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, ...projectWhere(scope) }, orderBy: { code: "asc" } }),
+    db.task.findMany({ where: { status: { notIn: ["DONE", "CANCELLED"] }, ...onProject(scope) }, include: { project: true }, orderBy: [{ project: { code: "asc" } }, { number: "asc" }] }),
   ]);
   const open = issues.filter((i) => !i.resolved);
   const lost = open.reduce((a, i) => a + Number(i.daysLost), 0);

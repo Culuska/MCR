@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireExpense } from "@/lib/scope";
 import { DeleteButton } from "@/components/DeleteButton";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -16,6 +17,7 @@ import { payExpense, transitionExpense } from "@/actions/expenses";
 export default async function ExpenseDetail({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRead("expenses");
   const { id } = await params;
+  await requireExpense(user, id);
   const e = await db.expense.findUnique({
     where: { id },
     include: { project: true, supplier: true, asset: true, task: true, createdBy: true, approvedBy: true, payments: { include: { account: true }, orderBy: { date: "asc" } } },

@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { assertProject, scopeOf } from "@/lib/scope";
+import { allows } from "@/lib/scope-rules";
 import { z } from "zod";
 import { db, type Tx } from "@/lib/db";
 import { requireWrite } from "@/lib/auth";
@@ -94,6 +96,10 @@ export async function saveAttendance(_: FormState, fd: FormData): Promise<FormSt
     const today = new Date(); today.setUTCHours(23, 59, 59, 999);
     if (day > today) throw new ActionError("You cannot record attendance for a future date.");
     const projectId = raw.projectId ? String(raw.projectId) : null;
+    // Project-level access: pick a project you may work on, and never touch a day another project already recorded.
+    const scope = await scopeOf(user);
+    if (!scope.all && !projectId) throw new ActionError("Choose the project this attendance is for.");
+    if (projectId) await assertProject(user, projectId);
 
     return db.$transaction(async (tx) => {
       if (projectId) {
@@ -111,6 +117,8 @@ export async function saveAttendance(_: FormState, fd: FormData): Promise<FormSt
         const locked = await tx.payrollLine.findFirst({ where: { employeeId: e.id, run: { status: { not: "VOID" }, periodStart: { lte: day }, periodEnd: { gte: day } } }, include: { run: true } });
         if (locked) throw new ActionError(`${e.name}'s attendance for that date is part of payroll run ${locked.run.number}. Void the run to change it.`);
 
+        const existing = await tx.attendance.findUnique({ where: { employeeId_date: { employeeId: e.id, date: day } }, select: { projectId: true } });
+        if (existing && !allows(scope, existing.projectId)) throw new ActionError(`${e.name}'s attendance for that day was recorded on another project, so you cannot change it.`);
         if (!status) { await tx.attendance.deleteMany({ where: { employeeId: e.id, date: day } }); cleared++; continue; }
         if (!(status in AttendanceStatus)) throw new ActionError(`Choose a valid status for ${e.name}.`);
         const ot = Number(raw[`ot_${e.id}`] || 0);

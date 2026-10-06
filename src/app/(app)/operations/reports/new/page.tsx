@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { projectWhere, scopeOf } from "@/lib/scope";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
 import { canWrite } from "@/lib/permissions";
@@ -18,7 +19,7 @@ export default async function NewReport({ searchParams }: { searchParams: Promis
   const user = await requireRead("operations");
   if (!canWrite(user.role, "operations")) redirect("/operations?tab=reports");
   const sp = await searchParams;
-  const projects = await db.project.findMany({ where: { status: "ACTIVE" }, orderBy: { code: "asc" } });
+  const projects = await db.project.findMany({ where: { status: "ACTIVE", ...projectWhere(await scopeOf(user)) }, orderBy: { code: "asc" } });
   const date = sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? new Date(sp.date + "T00:00:00Z") : todayUtc();
   const project = projects.find((p) => p.id === sp.project);
 

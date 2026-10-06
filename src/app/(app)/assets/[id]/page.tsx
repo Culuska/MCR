@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { currentScope, onProject, projectWhere } from "@/lib/scope";
 import { DeleteButton } from "@/components/DeleteButton";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -22,13 +23,13 @@ export default async function AssetDetail({ params }: { params: Promise<{ id: st
   const writer = canWrite(user.role, "assets");
   const unit = asset.kind === "VEHICLE" ? "km" : "h";
   const [costing, assignments, usage, maintenance, rentals, expenses, projects] = await Promise.all([
-    assetCosting(),
-    db.assetAssignment.findMany({ where: { assetId: id }, include: { project: true }, orderBy: { startDate: "desc" } }),
-    db.assetUsage.findMany({ where: { assetId: id }, include: { project: true }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 15 }),
+    currentScope().then((sc) => assetCosting(sc)),
+    db.assetAssignment.findMany({ where: { assetId: id, ...onProject(await currentScope()) }, include: { project: true }, orderBy: { startDate: "desc" } }),
+    db.assetUsage.findMany({ where: { assetId: id, ...onProject(await currentScope()) }, include: { project: true }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 15 }),
     db.maintenanceRecord.findMany({ where: { assetId: id }, orderBy: { date: "desc" }, take: 10 }),
-    db.rental.findMany({ where: { assetId: id }, include: { supplier: true }, orderBy: { startDate: "desc" } }),
-    db.expense.findMany({ where: { assetId: id, status: { not: "VOID" } }, orderBy: { date: "desc" }, take: 12 }),
-    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } }, orderBy: { code: "asc" } }),
+    db.rental.findMany({ where: { assetId: id, ...onProject(await currentScope()) }, include: { supplier: true }, orderBy: { startDate: "desc" } }),
+    db.expense.findMany({ where: { assetId: id, status: { not: "VOID" }, ...onProject(await currentScope()) }, orderBy: { date: "desc" }, take: 12 }),
+    db.project.findMany({ where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, ...projectWhere(await currentScope()) }, orderBy: { code: "asc" } }),
   ]);
   const c = costing.find((r) => r.asset.id === id);
   const current = assignments.find((a) => !a.endDate || daysUntil(a.endDate) >= 0);

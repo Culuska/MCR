@@ -3,6 +3,8 @@ import { requireRead } from "@/lib/auth";
 import { ROLE_LABEL } from "@/lib/permissions";
 import { createUser, resetPassword, updateUser } from "@/actions/users";
 import { sendResetLink } from "@/actions/password";
+import { setProjectAccess } from "@/actions/users";
+import { ASSIGNED_BY_DEFAULT, SCOPE_LABEL } from "@/lib/scope-rules";
 import { SecurityTab } from "@/components/SecurityTab";
 import { ActionForm, Submit } from "@/components/ActionForm";
 import { Empty, Field, PageHead, Tabs } from "@/components/ui";
@@ -53,7 +55,10 @@ async function AuditTab({ entity }: { entity?: string }) {
 }
 
 async function PeopleTab() {
-  const users = await db.user.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }] });
+  const [users, projects] = await Promise.all([
+    db.user.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }], include: { projectAccess: { select: { projectId: true } }, managedProjects: { select: { id: true } } } }),
+    db.project.findMany({ orderBy: { code: "asc" }, select: { id: true, code: true, name: true } }),
+  ]);
   return (
     <>
       <details className="more">
@@ -94,6 +99,27 @@ async function PeopleTab() {
                 <input type="hidden" name="id" value={u.id} />
                 <Submit className="btn sm">Email reset link</Submit>
               </ActionForm>
+              <details>
+                <summary className="small" style={{ cursor: "pointer" }}>Project access: {u.role === "SUPER_ADMIN" ? "all projects (always)" : SCOPE_LABEL[u.projectScope]}{u.projectScope === "ASSIGNED" || (u.projectScope === "DEFAULT" && ASSIGNED_BY_DEFAULT.includes(u.role)) ? ` · ${new Set([...u.projectAccess.map((a) => a.projectId), ...u.managedProjects.map((m) => m.id)]).size} project(s)` : ""}</summary>
+                <ActionForm action={setProjectAccess} className="form">
+                  <input type="hidden" name="id" value={u.id} />
+                  <Field name={`scope-${u.id}`} label="Which projects can they see?" hint="Project Managers and Site Supervisors see only assigned projects unless you choose All projects. A project's manager always sees it.">
+                    <select id={`scope-${u.id}`} name="scope" defaultValue={u.projectScope}>
+                      <option value="DEFAULT">Role default ({ASSIGNED_BY_DEFAULT.includes(u.role) ? "assigned projects only" : "all projects"})</option>
+                      <option value="ALL">All projects</option>
+                      <option value="ASSIGNED">Assigned projects only</option>
+                    </select>
+                  </Field>
+                  <div className="fields">
+                    {projects.map((p) => (
+                      <label key={p.id} className="small" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <input type="checkbox" name="project" value={p.id} defaultChecked={u.projectAccess.some((a) => a.projectId === p.id)} /> {p.code} {p.name.replace(" (sample)", "")}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="row"><Submit className="btn sm">Save project access</Submit></div>
+                </ActionForm>
+              </details>
               <details>
                 <summary className="small" style={{ cursor: "pointer" }}>Set a temporary password instead</summary>
                 <ActionForm action={resetPassword} className="inline-form" resetOnOk>

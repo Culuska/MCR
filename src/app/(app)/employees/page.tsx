@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireCompanyWide } from "@/lib/scope";
 import { DeleteButton } from "@/components/DeleteButton";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
@@ -15,6 +16,7 @@ export const metadata = { title: "Employees" };
 
 export default async function Employees({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
   const user = await requireRead("payroll");
+  await requireCompanyWide(user, "payroll");
   const { edit } = await searchParams;
   const writer = canWrite(user.role, "payroll");
   const isFinance = APPROVERS.includes(user.role);

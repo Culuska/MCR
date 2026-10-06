@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { assertInvoice, assertPayment, assertProject } from "@/lib/scope";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireWrite } from "@/lib/auth";
@@ -26,6 +27,8 @@ export async function saveInvoice(_: FormState, fd: FormData): Promise<FormState
   return run(async () => {
     const user = await requireWrite("invoices");
     const v = invoiceSchema.parse(formObject(fd));
+    await assertProject(user, v.projectId);
+    if (v.id) await assertInvoice(user, v.id);
     if (v.dueDate < v.issueDate) throw new ActionError("The due date cannot be before the issue date.");
 
     return db.$transaction(async (tx) => {
@@ -61,6 +64,7 @@ export async function transitionInvoice(_: FormState, fd: FormData): Promise<For
   return run(async () => {
     const user = await requireWrite("invoices");
     const { id, to, reason } = stateSchema.parse(formObject(fd));
+    await assertInvoice(user, id);
 
     return db.$transaction(async (tx) => {
       const inv = await tx.invoice.findUniqueOrThrow({ where: { id }, include: { payments: { where: { voided: false } } } });
@@ -101,6 +105,7 @@ export async function receivePayment(_: FormState, fd: FormData): Promise<FormSt
   return run(async () => {
     const user = await requireWrite("invoices");
     const v = receiptSchema.parse(formObject(fd));
+    await assertInvoice(user, v.invoiceId);
 
     return db.$transaction(async (tx) => {
       const inv = await tx.invoice.findUniqueOrThrow({ where: { id: v.invoiceId }, include: { payments: { where: { voided: false } } } });
@@ -139,6 +144,7 @@ export async function voidPayment(_: FormState, fd: FormData): Promise<FormState
     const user = await requireWrite("invoices");
     if (!APPROVERS.includes(user.role)) throw new ActionError("Only finance staff can void payments.");
     const { id, reason } = z.object({ id: z.string(), reason: z.string().trim().min(3, "Give a reason for voiding this payment.") }).parse(formObject(fd));
+    await assertPayment(user, id);
 
     return db.$transaction(async (tx) => {
       const p = await tx.payment.findUniqueOrThrow({ where: { id }, include: { invoice: { include: { payments: { where: { voided: false } } } }, expense: true } });

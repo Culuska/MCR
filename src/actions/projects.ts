@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { assertProject, scopeOf } from "@/lib/scope";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -31,6 +32,7 @@ export async function saveProject(_: FormState, fd: FormData): Promise<FormState
     const user = await requireWrite("projects");
     const raw = formObject(fd);
     const v = projectSchema.parse(raw);
+    if (v.id) await assertProject(user, v.id);
     if (v.startDate && v.expectedEnd && v.expectedEnd < v.startDate) throw new ActionError("The planned finish cannot be before the start date.");
 
     // Budget fields arrive as budget_<CATEGORY>. Blank or zero means no budget line.
@@ -58,6 +60,8 @@ export async function saveProject(_: FormState, fd: FormData): Promise<FormState
 
       if (!v.id) {
         const p = await tx.project.create({ data: { ...data, budget: { create: budget.map((b) => ({ category: b.category, amount: D(b.amount) })) } } });
+        // Someone limited to their own projects must be able to see the one they just created.
+        if (!(await scopeOf(user)).all) await tx.projectAccess.create({ data: { userId: user.id, projectId: p.id } });
         await audit({ userId: user.id, action: "project.create", entity: "Project", entityId: p.id, summary: `${user.name} created project ${p.code} (${p.name}), contract ${fmt(p.contractValue)}`, after: data }, tx);
         goTo = `/projects/${p.id}`;
         return `${p.code} created`;

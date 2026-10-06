@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { onProject, scopeOf } from "@/lib/scope";
 import { db } from "@/lib/db";
 import { InvoiceStatus } from "@/generated/prisma/enums";
 import { requireRead } from "@/lib/auth";
@@ -13,6 +14,7 @@ export default async function Invoices({ searchParams }: { searchParams: Promise
   const user = await requireRead("invoices");
   const { status } = await searchParams;
   const all = await db.invoice.findMany({
+    where: onProject(await scopeOf(user)),
     include: { customer: true, project: true, payments: { where: { voided: false } } }, orderBy: [{ issueDate: "desc" }, { number: "desc" }],
   });
   const now = new Date();
