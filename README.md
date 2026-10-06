@@ -102,6 +102,10 @@ Needs a PostgreSQL database and a Node host (for example Vercel). Set these envi
 
 The local `prisma dev` database drops connections when more than two are open, so the app uses a pool of 2 against `localhost` and 10 elsewhere. Set `DB_POOL_MAX` to change it. The `prisma dev` database is meant for trying the app out. It can stop on its own; if it does, run `npx prisma dev start mcr` (leave it running in its own terminal), then restart `npm run dev`. For real use, point `DATABASE_URL` at a proper PostgreSQL server.
 
+## Deleting records
+
+Customers, suppliers, projects, invoices, expenses, employees, materials, equipment, tasks and subcontracts have a **Delete** button (on the list row, or on the record's own page). It asks for a reason, then deletes permanently. The rule is the same everywhere: a record can be deleted only if nothing else depends on it and it never touched the books. So a customer with projects or invoices, or a project with any spending, cannot be deleted, and the message says what still uses it. Invoices can be deleted only while still a draft, expenses only before approval, and subcontracts only before they start. Anything already posted to the ledger is **voided** instead, which reverses it and keeps it on record. Every delete is written to the audit log with the reason and a copy of the record, and files attached to it are hidden, not erased. A deleted draft leaves a gap in the document numbers (for example EXP-00007 is missing); the audit log explains it. Rules: `src/lib/deletion.ts` and `src/actions/delete.ts`. `scripts/test-delete-data.ts` makes and removes dummy records for trying it.
+
 ## Roles
 
 Super Admin, Finance Manager, Accountant, Project Manager, Site Supervisor, HR, Storekeeper, Viewer. Access rules are in `src/lib/permissions.ts` and are checked again on the server for every action.

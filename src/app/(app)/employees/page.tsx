@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DeleteButton } from "@/components/DeleteButton";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
 import { APPROVERS, canWrite } from "@/lib/permissions";
@@ -67,7 +68,7 @@ export default async function Employees({ searchParams }: { searchParams: Promis
               <td className="r num">{fmt2(e.rate)}</td>
               <td className="r num">{e.overtimeRate.isZero() ? "—" : fmt2(e.overtimeRate)}</td>
               <td className={`r num ${owed.get(e.id)?.greaterThan(0) ? "out" : ""}`}>{owed.get(e.id)?.greaterThan(0) ? fmt(owed.get(e.id)) : "—"}</td>
-              <td>{writer && <Link className="small" href={`/employees?edit=${e.id}`}>Edit</Link>}</td>
+              <td>{writer && <div className="row"><Link className="small" href={`/employees?edit=${e.id}`}>Edit</Link><DeleteButton kind="employee" id={e.id} name={e.name} /></div>}</td>
             </tr>
           ))}</tbody>
         </table></div></section>

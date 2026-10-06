@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DeleteButton } from "@/components/DeleteButton";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
@@ -38,6 +39,7 @@ export default async function SubcontractPage({ params }: { params: Promise<{ id
     <>
       <PageHead title={s.number} sub={`${clean(s.supplier.name)} · ${s.project.code} ${clean(s.project.name)}`}>
         <Pill status="ACTIVE" text={label(s.status)} />
+        {s.status === "DRAFT" && writer && <DeleteButton kind="subcontract" id={s.id} name={s.number} redirectTo="/subcontracts" />}
         <Link className="btn" href="/subcontracts">All subcontracts</Link>
       </PageHead>
 

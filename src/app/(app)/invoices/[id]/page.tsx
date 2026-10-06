@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DeleteButton } from "@/components/DeleteButton";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
@@ -47,6 +48,7 @@ export default async function InvoiceDetail({ params }: { params: Promise<{ id: 
         <div className="row">
           {inv.status === "DRAFT" && writer && <StepForm action={transitionInvoice} id={inv.id} to="SEND" label="Issue invoice" primary />}
           {inv.status === "DRAFT" && isFinance && <StepForm action={transitionInvoice} id={inv.id} to="VOID" label="Void draft" ask="Reason" danger />}
+          {inv.status === "DRAFT" && writer && <DeleteButton kind="invoice" id={inv.id} name={inv.number} redirectTo="/invoices" />}
           {(open || inv.status === "PAID") && isFinance && inv.payments.every((p) => p.voided) && <StepForm action={transitionInvoice} id={inv.id} to="VOID" label="Void invoice" ask="Reason for voiding" danger />}
           {(open || inv.status === "PAID") && isFinance && inv.payments.some((p) => !p.voided) && <span className="small muted">To void this invoice, void its payments first.</span>}
         </div>

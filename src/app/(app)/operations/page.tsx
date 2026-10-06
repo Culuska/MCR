@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DeleteButton } from "@/components/DeleteButton";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
 import { canWrite } from "@/lib/permissions";
@@ -163,6 +164,7 @@ async function Tasks({ sp, writer }: { sp: SP; writer: boolean }) {
                 <td>{writer && (
                   <div className="row">
                     <Link className="small" href={`/operations?tab=tasks&edit=${t.id}`}>Edit</Link>
+                    <DeleteButton kind="task" id={t.id} name={t.number} />
                     {(t.status === "TODO" || t.status === "IN_PROGRESS") && <StepForm action={setTaskState} id={t.id} to="BLOCK" label="Block" ask="What is blocking it?" />}
                     {t.status === "BLOCKED" && <StepForm action={setTaskState} id={t.id} to="UNBLOCK" label="Unblock" primary />}
                     {finished ? <StepForm action={setTaskState} id={t.id} to="REOPEN" label="Reopen" /> : <StepForm action={setTaskState} id={t.id} to="CANCEL" label="Cancel" ask="Why?" danger />}

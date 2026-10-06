@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DeleteButton } from "@/components/DeleteButton";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
 import { APPROVERS, canWrite } from "@/lib/permissions";
@@ -124,7 +125,7 @@ async function Stock({ role, edit }: { role: Parameters<typeof canWrite>[0]; edi
                 <td className="r num">{String(r.onHand)} {r.unit} {lowStock && <span className={`pill ${D(r.onHand).isZero() ? "bad" : "warn"}`}>{D(r.onHand).isZero() ? "Out" : "Low"}</span>}</td>
                 <td className="r num">{D(r.avgCost).isZero() ? "—" : fmt2(r.avgCost)}</td><td className="r num">{fmt(r.value)}</td>
                 <td className="r num">{D(r.reorderLevel).isZero() ? "—" : String(r.reorderLevel)}</td>
-                <td>{writer && <Link className="small" href={`/materials?edit=${r.id}`}>Edit</Link>}</td>
+                <td>{writer && <div className="row"><Link className="small" href={`/materials?edit=${r.id}`}>Edit</Link><DeleteButton kind="material" id={r.id} name={r.name} /></div>}</td>
               </tr>
             );
           })}</tbody>

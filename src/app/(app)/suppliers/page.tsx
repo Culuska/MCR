@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DeleteButton } from "@/components/DeleteButton";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
 import { canWrite } from "@/lib/permissions";
@@ -47,7 +48,7 @@ export default async function Suppliers({ searchParams }: { searchParams: Promis
                 <td className="r num">{fmt(spent)}</td>
                 <td className={`r num ${owed.greaterThan(0) ? "out" : ""}`}>{owed.greaterThan(0) ? fmt(owed) : "—"}</td>
                 <td className="r num">{held.greaterThan(0) ? fmt(held) : "—"}</td>
-                <td>{writer && <Link className="small" href={`/suppliers?edit=${s.id}`}>Edit</Link>}</td>
+                <td>{writer && <div className="row"><Link className="small" href={`/suppliers?edit=${s.id}`}>Edit</Link><DeleteButton kind="supplier" id={s.id} name={s.name} /></div>}</td>
               </tr>
             );
           })}</tbody>

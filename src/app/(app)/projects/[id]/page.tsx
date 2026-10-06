@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DeleteButton } from "@/components/DeleteButton";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
@@ -29,6 +30,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
         <Pill status={p.status} /> <Sample name={p.name} />
         {canWrite(user.role, "projects") && <Link className="btn" href={`/projects/${p.id}/edit`}>Edit project</Link>}
         <a className="btn" href={`/api/pdf/project/${p.id}`} target="_blank" rel="noreferrer">Statement PDF</a>
+        {canWrite(user.role, "projects") && <DeleteButton kind="project" id={p.id} name={p.code} redirectTo="/projects" />}
         <Link className="btn" href={`/expenses/new?project=${p.id}`}>Add expense</Link>
       </PageHead>
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DeleteButton } from "@/components/DeleteButton";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
@@ -86,6 +87,7 @@ export default async function AssetDetail({ params }: { params: Promise<{ id: st
             <tr><td className="muted">Insurance expires</td><td className="num">{fmtDate(asset.insuranceExpiry)}</td></tr>
             {asset.notes && <tr><td className="muted">Notes</td><td>{asset.notes}</td></tr>}
           </tbody></table></div>
+          {writer && <div style={{ marginBottom: 8 }}><DeleteButton kind="asset" id={asset.id} name={asset.name} redirectTo="/assets" /></div>}
           {writer && <details className="more"><summary>Edit details</summary><div className="body"><AssetForm asset={asset} goTo={`/assets/${asset.id}`} /></div></details>}
         </section>
       </div>

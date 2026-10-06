@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DeleteButton } from "@/components/DeleteButton";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireRead } from "@/lib/auth";
@@ -59,6 +60,7 @@ export default async function ExpenseDetail({ params }: { params: Promise<{ id: 
             </>
           )}
           {e.status === "SUBMITTED" && !isFinance && <span className="muted small">Waiting for finance to approve.</span>}
+          {(e.status === "DRAFT" || e.status === "SUBMITTED") && writer && (e.createdById === user.id || isFinance) && e.category !== "STOCK_PURCHASE" && <DeleteButton kind="expense" id={e.id} name={e.number} redirectTo="/expenses" />}
           {(e.status === "APPROVED" || e.status === "PAID") && isFinance && <StepForm action={transitionExpense} id={e.id} to="VOID" label="Void expense" ask="Reason for voiding" danger />}
         </div>
       </section>
