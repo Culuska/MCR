@@ -2,13 +2,15 @@ import { db } from "@/lib/db";
 import { allProjectsSummary, cashFlow, ledgerBalances, payables, receivables, subcontractFigures } from "@/lib/finance";
 import { CATEGORY_LABEL } from "@/lib/domain";
 import { D } from "@/lib/money";
+import { balanceSheet, dateLabel, todayDay } from "@/lib/balance-sheet";
 import type { Prisma } from "@/generated/prisma/client";
 
 export type Cell = string | number | null | undefined;
 export type Report = { title: string; headers: string[]; rows: Cell[][] };
-export type Filters = { from?: Date; to?: Date; projectId?: string };
+export type Filters = { from?: Date; to?: Date; projectId?: string; compare?: Date };
 
-export const REPORTS: { key: string; title: string; group: "Financial" | "Project" | "Stock" | "Operations"; note?: string; filters?: ("date" | "project")[] }[] = [
+export const REPORTS: { key: string; title: string; group: "Financial" | "Project" | "Stock" | "Operations"; note?: string; filters?: ("date" | "project" | "asof")[] }[] = [
+  { key: "balance-sheet", title: "Balance sheet", group: "Financial", filters: ["asof"] },
   { key: "trial-balance", title: "Trial balance", group: "Financial" },
   { key: "general-ledger", title: "General ledger", group: "Financial", filters: ["date", "project"] },
   { key: "cash-flow", title: "Cash flow, last 12 months", group: "Financial" },
@@ -32,6 +34,13 @@ const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : 
 
 export async function buildReport(key: string, f: Filters): Promise<Report | null> {
   switch (key) {
+    case "balance-sheet": {
+      // "As of" is the end date the page sends; compare is an optional second date shown beside it.
+      const asOf = f.to ? new Date(f.to.toISOString().slice(0, 10) + "T00:00:00.000Z") : todayDay();
+      const sheet = await balanceSheet(f.compare ? [asOf, f.compare] : [asOf]);
+      return { title: "Balance sheet", headers: ["Account", ...sheet.dates.map((d) => `As of ${dateLabel(d)}`)],
+        rows: sheet.lines.map((l) => ["  ".repeat(l.indent) + l.label, ...(l.amounts ? l.amounts.map(n) : sheet.dates.map(() => ""))]) };
+    }
     case "trial-balance": {
       const rows = (await ledgerBalances()).filter((r) => !r.debit.isZero() || !r.credit.isZero());
       return { title: "Trial balance", headers: ["Code", "Account", "Type", "Debit", "Credit"], rows: rows.map((r) => [r.code, r.name, r.type, n(r.debit), n(r.credit)]) };

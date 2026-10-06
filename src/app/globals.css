@@ -168,3 +168,24 @@ dialog.pv::backdrop { background: rgba(10, 18, 28, 0.55); }
 .pv-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .pv-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .pv-frame { flex: 1; width: 100%; border: 0; background: #fff; }
+
+/* Balance sheet, QuickBooks style */
+.bs-paper { box-sizing: border-box; width: 100%; max-width: 900px; justify-self: center; margin: 18px auto 4px; padding: 28px 28px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.bs-head { text-align: center; margin-bottom: 18px; }
+.bs-co { font-weight: 700; font-size: 15px; }
+.bs-title { margin: 4px 0 2px; font: 800 24px/1.1 var(--f-display); text-transform: none; letter-spacing: 0; }
+.bs-asof { color: var(--muted); font-size: 13px; }
+table.bs { width: 100%; border-collapse: collapse; }
+table.bs thead th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border-bottom: 1px solid var(--muted); padding: 6px 12px; }
+table.bs td { padding: 5px 12px; border: 0; font-size: 14px; }
+table.bs td a { color: #1c5db0; text-decoration: none; }
+table.bs td a:hover { text-decoration: underline; }
+table.bs tr.bs-title td { font-weight: 700; padding-top: 10px; }
+table.bs tr.bs-title.top td { font-size: 15px; padding-top: 22px; }
+table.bs tr.bs-total td { font-weight: 700; }
+table.bs tr.bs-total td.num { border-top: 1px solid var(--muted); }
+table.bs tr.bs-grand td { font-weight: 800; padding-top: 10px; }
+table.bs tr.bs-grand td.num { border-top: 1px solid var(--muted); border-bottom: 3px double var(--muted); }
+table.bs tbody tr:hover td { background: var(--surface-2); }
+.bs-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+@media (max-width: 760px) { .bs-paper { padding: 16px 8px 8px; } table.bs td, table.bs thead th { padding-left: 6px; padding-right: 6px; } }

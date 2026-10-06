@@ -6,15 +6,16 @@ import { fmt, fmt2, fmtDate, sum } from "@/lib/money";
 import { CATEGORY_LABEL } from "@/lib/domain";
 import { CashFlowChart } from "@/components/charts";
 import { Empty, Kpi, PageHead, Tabs, clean } from "@/components/ui";
+import { BalanceSheetView } from "@/components/BalanceSheetView";
 
 export const metadata = { title: "Finance" };
 
 const TABS = [
-  { key: "statements", label: "Statements" }, { key: "trial", label: "Trial balance" }, { key: "ledger", label: "General ledger" },
+  { key: "statements", label: "Statements" }, { key: "balance", label: "Balance sheet" }, { key: "trial", label: "Trial balance" }, { key: "ledger", label: "General ledger" },
   { key: "cash", label: "Cash flow" }, { key: "receivable", label: "Receivables" }, { key: "payable", label: "Payables" },
 ];
 
-export default async function Finance({ searchParams }: { searchParams: Promise<{ tab?: string; account?: string; project?: string }> }) {
+export default async function Finance({ searchParams }: { searchParams: Promise<{ tab?: string; account?: string; project?: string; asof?: string; compare?: string }> }) {
   await requireRead("finance");
   const sp = await searchParams;
   const tab = TABS.some((t) => t.key === sp.tab) ? sp.tab! : "statements";
@@ -24,6 +25,7 @@ export default async function Finance({ searchParams }: { searchParams: Promise<
       <PageHead title="Finance" sub="Double-entry books. Every figure here comes from posted journal entries." />
       <Tabs current={tab} items={TABS.map((t) => ({ ...t, href: `/finance?tab=${t.key}` }))} />
       {tab === "statements" && <Statements />}
+      {tab === "balance" && <BalanceSheetView asof={sp.asof} compare={sp.compare} />}
       {tab === "trial" && <Trial />}
       {tab === "ledger" && <Ledger account={sp.account} project={sp.project} />}
       {tab === "cash" && <Cash />}

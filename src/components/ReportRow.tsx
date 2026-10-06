@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 
-type Rep = { key: string; title: string; filters?: ("date" | "project")[] };
+type Rep = { key: string; title: string; filters?: ("date" | "project" | "asof")[] };
 
 // One report: its filters, a PDF preview in a window over the page, and the two downloads.
 export function ReportRow({ rep, projects }: { rep: Rep; projects: { id: string; code: string }[] }) {
@@ -25,6 +25,10 @@ export function ReportRow({ rep, projects }: { rep: Rep; projects: { id: string;
         <div className="filters">
           {rep.filters?.includes("date") && (<>
             <input type="date" name="from" aria-label={`${rep.title} from date`} /><span className="muted">to</span><input type="date" name="to" aria-label={`${rep.title} to date`} />
+          </>)}
+          {rep.filters?.includes("asof") && (<>
+            <label className="small muted" htmlFor={`${rep.key}-to`}>As of</label><input id={`${rep.key}-to`} type="date" name="to" />
+            <label className="small muted" htmlFor={`${rep.key}-cmp`}>Compare with</label><input id={`${rep.key}-cmp`} type="date" name="compare" />
           </>)}
           {rep.filters?.includes("project") && (
             <select name="project" aria-label={`${rep.title} project`}><option value="">All projects</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.code}</option>)}</select>
