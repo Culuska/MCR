@@ -102,6 +102,18 @@ Needs a PostgreSQL database and a Node host (for example Vercel). Set these envi
 
 The local `prisma dev` database drops connections when more than two are open, so the app uses a pool of 2 against `localhost` and 10 elsewhere. Set `DB_POOL_MAX` to change it. The `prisma dev` database is meant for trying the app out. It can stop on its own; if it does, run `npx prisma dev start mcr` (leave it running in its own terminal), then restart `npm run dev`. For real use, point `DATABASE_URL` at a proper PostgreSQL server.
 
+## Security
+
+- **Passwords** need 12+ characters with upper and lower case, a number and a symbol, and cannot be the email, the name, or a common password (`src/lib/password-policy.ts`). Stored as bcrypt hashes only.
+- **Failed sign-ins:** 5 failures for one email, or 20 from one address, pause sign-in for 15 minutes. The pause ends by itself, is counted by email text (so it never reveals which emails exist), and is written to the audit trail. Wrong email and wrong password give the same message and take the same time.
+- **Forgot password** (login page): enter an email, get a link that works once and expires in 30 minutes. The same neutral answer is shown whether or not the email exists. Only a SHA-256 hash of the token is stored. A new request cancels older links. A used or expired link is refused. After a reset the user is told by email and every old session ends. At most 3 requests per email per hour.
+- **Change password / Sign out everywhere:** the Account page. Changing a password ends all other sessions.
+- **Settings → Security:** email status, the rules above, who is paused now, sign-in history and reset history. Passwords and keys are never shown. The audit trail records the address each action came from.
+- **Email settings (environment variables, never committed):** `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM`, `EMAIL_FROM_NAME` (and `EMAIL_SECURE=true` for port 465). **`APP_URL`** must be the public address of the app (for example `https://www.mcrltd.app`); links in emails are built from it and never from the request, so a forged Host header cannot redirect a reset. Without email set up nothing is sent; an administrator can still set a temporary password (People and roles). In development, with no email set, the reset link is printed in the server console.
+- Tests: `scripts/check-security.ts` (rules) and `scripts/test_security.py` (real flows over HTTP, needs a local copy).
+
+Not built yet: access limited to assigned projects, permissions editable per role, two-factor sign-in, "remember me".
+
 ## Profit and loss
 
 Finance → **Profit and loss**, in the same QuickBooks style: Income, Cost of Construction, Gross Profit, Expenses, Net Operating Income, Other Income, Net Income. Pick any From and To dates (default: 1 January to today) and tick **Compare with previous period** for a second column of the same length plus a Change column. PDF and CSV are beside it, and it is also under Reports. Cost of Construction is job cost (wages, materials, fuel, equipment hire and maintenance, transport, subcontractors, site costs, tools); rent, utilities, insurance, permits and other costs are Expenses below Gross Profit. That split is in `src/lib/profit-loss.ts` (`DIRECT`) if you want it changed. Its Net Income always equals the Balance Sheet's Net Income for the same year (`scripts/check-profit-loss.ts`).
@@ -128,6 +140,7 @@ npx tsx scripts/check-subcontract.ts  # certificate and retention rules
 npx tsx scripts/check-operations.ts   # task, progress and delay rules
 npx tsx scripts/check-files.ts     # attachment type and size rules
 npx tsx scripts/check-pdf.ts       # PDF engine
+npx tsx scripts/check-security.ts       # password rules, lockout, reset tokens
 npx tsx scripts/check-profit-loss.ts   # profit and loss rules, agrees with the balance sheet
 npx tsx scripts/check-balance-sheet.ts  # layout, and the sheet balances on any date
 npx tsx scripts/check-ledger.ts    # debits equal credits, balance sheet balances

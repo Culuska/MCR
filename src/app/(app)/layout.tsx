@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { canRead, ROLE_LABEL, type Module } from "@/lib/permissions";
 import { logout } from "@/actions/auth";
@@ -32,6 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Nav items={items} />
         <div className="who">
           <div><b>{user.name}</b><br />{ROLE_LABEL[user.role]}</div>
+          <Link href="/account" className="small" style={{ color: "inherit" }}>Account and password</Link>
           <form action={logout}><button type="submit">Sign out</button></form>
         </div>
       </aside>

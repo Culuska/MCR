@@ -7,10 +7,11 @@ import { hashPassword, requireWrite } from "@/lib/auth";
 import { ActionError } from "@/lib/errors";
 import { audit } from "@/lib/audit";
 import { ROLE_LABEL } from "@/lib/permissions";
+import { passwordProblems } from "@/lib/password-policy";
 import { formObject, run, type FormState } from "@/lib/action";
 import { Role } from "@/generated/prisma/enums";
 
-const password = z.string().min(10, "Use a password of at least 10 characters.").max(100);
+const password = z.string().max(100, "Use at most 100 characters.");
 
 async function adminOnly() {
   const user = await requireWrite("settings"); // only Super Admin holds write access to settings
@@ -32,6 +33,8 @@ export async function createUser(_: FormState, fd: FormData): Promise<FormState>
   return run(async () => {
     const admin = await adminOnly();
     const v = createSchema.parse(formObject(fd));
+    const weak = passwordProblems(v.password, v);
+    if (weak.length) throw new ActionError(weak.join(" "));
     if (await db.user.findUnique({ where: { email: v.email } })) throw new ActionError(`${v.email} already has an account.`);
     const u = await db.user.create({ data: { name: v.name, email: v.email, role: v.role, passwordHash: await hashPassword(v.password) } });
     await audit({ userId: admin.id, action: "user.create", entity: "User", entityId: u.id, summary: `${admin.name} added ${u.name} (${u.email}) as ${ROLE_LABEL[u.role]}` });
@@ -69,7 +72,10 @@ export async function resetPassword(_: FormState, fd: FormData): Promise<FormSta
     const admin = await adminOnly();
     const v = z.object({ id: z.string(), password }).parse(formObject(fd));
     const u = await db.user.findUniqueOrThrow({ where: { id: v.id } });
-    await db.user.update({ where: { id: v.id }, data: { passwordHash: await hashPassword(v.password) } });
+    const weak = passwordProblems(v.password, u);
+    if (weak.length) throw new ActionError(weak.join(" "));
+    // Their other sessions end, so whoever held the old password is signed out.
+    await db.user.update({ where: { id: v.id }, data: { passwordHash: await hashPassword(v.password), sessionsValidFrom: new Date() } });
     await audit({ userId: admin.id, action: "user.password", entity: "User", entityId: v.id, summary: `${admin.name} reset the password for ${u.name}` });
     return `Password reset for ${u.name}`;
   });

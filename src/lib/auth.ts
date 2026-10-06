@@ -41,15 +41,19 @@ export type SessionUser = { id: string; name: string; email: string; role: Role 
 export async function getUser(): Promise<SessionUser | null> {
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null;
-  let userId: string;
+  let userId: string, issuedAt: number;
   try {
-    userId = String((await jwtVerify(token, secret())).payload.sub);
+    const { payload } = await jwtVerify(token, secret());
+    userId = String(payload.sub);
+    issuedAt = Number(payload.iat ?? 0);
   } catch {
     return null; // expired or tampered token: treat as signed out
   }
   // A database failure is not a sign-out. Let it surface instead of bouncing people to the login page.
   const u = await db.user.findUnique({ where: { id: userId } });
   if (!u || !u.active) return null;
+  // A password change or "sign out everywhere" ends every session issued before it.
+  if (issuedAt < Math.floor(u.sessionsValidFrom.getTime() / 1000)) return null;
   return { id: u.id, name: u.name, email: u.email, role: u.role };
 }
 

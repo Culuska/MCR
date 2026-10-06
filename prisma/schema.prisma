@@ -96,17 +96,20 @@ enum JournalStatus {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  passwordHash String
-  role         Role     @default(VIEWER)
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  id                String   @id @default(cuid())
+  email             String   @unique
+  name              String
+  passwordHash      String
+  role              Role     @default(VIEWER)
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  // Sessions issued before this moment are refused. Moved forward when the password changes or on "sign out everywhere".
+  sessionsValidFrom DateTime @default(now())
 
-  managedProjects  Project[]      @relation("ProjectManager")
-  expensesCreated  Expense[]      @relation("ExpenseCreatedBy")
-  expensesApproved Expense[]      @relation("ExpenseApprovedBy")
+  passwordResets   PasswordReset[]
+  managedProjects  Project[]       @relation("ProjectManager")
+  expensesCreated  Expense[]       @relation("ExpenseCreatedBy")
+  expensesApproved Expense[]       @relation("ExpenseApprovedBy")
   journals         JournalEntry[]
   auditLogs        AuditLog[]
 }
@@ -328,6 +331,7 @@ model AuditLog {
   summary   String // human sentence: "Ali approved EXP-00234 for $2,500"
   before    Json?
   after     Json?
+  ip        String? // where the request came from, when known
   createdAt DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id])
@@ -1010,4 +1014,33 @@ model StoredFile {
   key       String   @id
   bytes     Bytes
   createdAt DateTime @default(now())
+}
+
+// Every sign-in and password-reset request, successful or not. Drives the lockout and the Security page.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  kind      String   @default("login") // login | reset
+  email     String
+  ip        String?
+  success   Boolean
+  reason    String? // ok, bad-password, unknown-email, inactive, locked, requested ...
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+}
+
+// A single-use password reset link. Only the SHA-256 of the token is stored, never the token itself.
+model PasswordReset {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  usedAt      DateTime? // set when the link is used or replaced by a newer one
+  requestedIp String?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
