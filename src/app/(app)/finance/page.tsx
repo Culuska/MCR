@@ -7,15 +7,16 @@ import { CATEGORY_LABEL } from "@/lib/domain";
 import { CashFlowChart } from "@/components/charts";
 import { Empty, Kpi, PageHead, Tabs, clean } from "@/components/ui";
 import { BalanceSheetView } from "@/components/BalanceSheetView";
+import { ProfitLossView } from "@/components/ProfitLossView";
 
 export const metadata = { title: "Finance" };
 
 const TABS = [
-  { key: "statements", label: "Statements" }, { key: "balance", label: "Balance sheet" }, { key: "trial", label: "Trial balance" }, { key: "ledger", label: "General ledger" },
+  { key: "statements", label: "Statements" }, { key: "profit", label: "Profit and loss" }, { key: "balance", label: "Balance sheet" }, { key: "trial", label: "Trial balance" }, { key: "ledger", label: "General ledger" },
   { key: "cash", label: "Cash flow" }, { key: "receivable", label: "Receivables" }, { key: "payable", label: "Payables" },
 ];
 
-export default async function Finance({ searchParams }: { searchParams: Promise<{ tab?: string; account?: string; project?: string; asof?: string; compare?: string }> }) {
+export default async function Finance({ searchParams }: { searchParams: Promise<{ tab?: string; account?: string; project?: string; asof?: string; compare?: string; from?: string; to?: string }> }) {
   await requireRead("finance");
   const sp = await searchParams;
   const tab = TABS.some((t) => t.key === sp.tab) ? sp.tab! : "statements";
@@ -25,6 +26,7 @@ export default async function Finance({ searchParams }: { searchParams: Promise<
       <PageHead title="Finance" sub="Double-entry books. Every figure here comes from posted journal entries." />
       <Tabs current={tab} items={TABS.map((t) => ({ ...t, href: `/finance?tab=${t.key}` }))} />
       {tab === "statements" && <Statements />}
+      {tab === "profit" && <ProfitLossView from={sp.from} to={sp.to} compare={sp.compare} />}
       {tab === "balance" && <BalanceSheetView asof={sp.asof} compare={sp.compare} />}
       {tab === "trial" && <Trial />}
       {tab === "ledger" && <Ledger account={sp.account} project={sp.project} />}

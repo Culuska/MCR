@@ -3,6 +3,7 @@ import { allProjectsSummary, cashFlow, ledgerBalances, payables, receivables, su
 import { CATEGORY_LABEL } from "@/lib/domain";
 import { D } from "@/lib/money";
 import { balanceSheet, dateLabel, todayDay } from "@/lib/balance-sheet";
+import { periodFrom, periodLabel, previousPeriod, profitAndLoss } from "@/lib/profit-loss";
 import type { Prisma } from "@/generated/prisma/client";
 
 export type Cell = string | number | null | undefined;
@@ -11,6 +12,7 @@ export type Filters = { from?: Date; to?: Date; projectId?: string; compare?: Da
 
 export const REPORTS: { key: string; title: string; group: "Financial" | "Project" | "Stock" | "Operations"; note?: string; filters?: ("date" | "project" | "asof")[] }[] = [
   { key: "balance-sheet", title: "Balance sheet", group: "Financial", filters: ["asof"] },
+  { key: "profit-loss", title: "Profit and loss", group: "Financial", filters: ["date"] },
   { key: "trial-balance", title: "Trial balance", group: "Financial" },
   { key: "general-ledger", title: "General ledger", group: "Financial", filters: ["date", "project"] },
   { key: "cash-flow", title: "Cash flow, last 12 months", group: "Financial" },
@@ -40,6 +42,12 @@ export async function buildReport(key: string, f: Filters): Promise<Report | nul
       const sheet = await balanceSheet(f.compare ? [asOf, f.compare] : [asOf]);
       return { title: "Balance sheet", headers: ["Account", ...sheet.dates.map((d) => `As of ${dateLabel(d)}`)],
         rows: sheet.lines.map((l) => ["  ".repeat(l.indent) + l.label, ...(l.amounts ? l.amounts.map(n) : sheet.dates.map(() => ""))]) };
+    }
+    case "profit-loss": {
+      const period = periodFrom(f.from?.toISOString().slice(0, 10), f.to?.toISOString().slice(0, 10));
+      const pl = await profitAndLoss(f.compare ? [period, previousPeriod(period)] : [period]);
+      return { title: "Profit and loss", headers: ["Account", ...pl.periods.map(periodLabel)],
+        rows: pl.lines.map((l) => ["  ".repeat(l.indent) + l.label, ...(l.amounts ? l.amounts.map(n) : pl.periods.map(() => ""))]) };
     }
     case "trial-balance": {
       const rows = (await ledgerBalances()).filter((r) => !r.debit.isZero() || !r.credit.isZero());

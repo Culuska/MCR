@@ -102,6 +102,10 @@ Needs a PostgreSQL database and a Node host (for example Vercel). Set these envi
 
 The local `prisma dev` database drops connections when more than two are open, so the app uses a pool of 2 against `localhost` and 10 elsewhere. Set `DB_POOL_MAX` to change it. The `prisma dev` database is meant for trying the app out. It can stop on its own; if it does, run `npx prisma dev start mcr` (leave it running in its own terminal), then restart `npm run dev`. For real use, point `DATABASE_URL` at a proper PostgreSQL server.
 
+## Profit and loss
+
+Finance → **Profit and loss**, in the same QuickBooks style: Income, Cost of Construction, Gross Profit, Expenses, Net Operating Income, Other Income, Net Income. Pick any From and To dates (default: 1 January to today) and tick **Compare with previous period** for a second column of the same length plus a Change column. PDF and CSV are beside it, and it is also under Reports. Cost of Construction is job cost (wages, materials, fuel, equipment hire and maintenance, transport, subcontractors, site costs, tools); rent, utilities, insurance, permits and other costs are Expenses below Gross Profit. That split is in `src/lib/profit-loss.ts` (`DIRECT`) if you want it changed. Its Net Income always equals the Balance Sheet's Net Income for the same year (`scripts/check-profit-loss.ts`).
+
 ## Balance sheet
 
 Finance → **Balance sheet** is laid out like QuickBooks: Assets (Bank Accounts, Accounts Receivable, Other Current Assets, Fixed Assets) and Liabilities and Equity (Accounts Payable, other current liabilities, long-term loans, equity), with a total under every group. Pick an **As of** date to see the books on any day, and an optional **Compare with** date to add a second column and a Change column. Account names open the general ledger. The same sheet is under Reports (preview, PDF, CSV). The financial year is the calendar year: profit before 1 January shows as Retained Earnings and profit since then as Net Income, so the sheet always balances. Layout rules are in `src/lib/balance-sheet.ts`, checked by `scripts/check-balance-sheet.ts`.
@@ -124,6 +128,7 @@ npx tsx scripts/check-subcontract.ts  # certificate and retention rules
 npx tsx scripts/check-operations.ts   # task, progress and delay rules
 npx tsx scripts/check-files.ts     # attachment type and size rules
 npx tsx scripts/check-pdf.ts       # PDF engine
+npx tsx scripts/check-profit-loss.ts   # profit and loss rules, agrees with the balance sheet
 npx tsx scripts/check-balance-sheet.ts  # layout, and the sheet balances on any date
 npx tsx scripts/check-ledger.ts    # debits equal credits, balance sheet balances
 ```
