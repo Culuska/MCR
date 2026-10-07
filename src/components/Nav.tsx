@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSyncExternalStore } from "react";
 
 const ICON: Record<string, string> = {
   dashboard: "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z",
@@ -22,17 +23,61 @@ const ICON: Record<string, string> = {
   settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z",
 };
 
-export function Nav({ items }: { items: { href: string; label: string; key: string }[] }) {
+type Item = { href: string; label: string; key: string };
+
+const isActive = (path: string, href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
+
+function Icon({ name }: { name: string }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICON[name]} /></svg>;
+}
+
+// What the person chose to open or fold, kept in this browser. Read through useSyncExternalStore so the server render
+// (nothing remembered) and the first browser render agree.
+type Saved = { opened: string[]; foldedAt: Record<string, string> };
+const KEY = "mcr-nav";
+const subscribe = (cb: () => void) => { window.addEventListener("storage", cb); window.addEventListener(KEY, cb); return () => { window.removeEventListener("storage", cb); window.removeEventListener(KEY, cb); }; };
+const readRaw = () => { try { return localStorage.getItem(KEY) ?? ""; } catch { return ""; } };
+function parse(raw: string): Saved {
+  try {
+    const v = JSON.parse(raw);
+    return { opened: Array.isArray(v?.opened) ? v.opened.filter((x: unknown) => typeof x === "string") : [], foldedAt: v?.foldedAt && typeof v.foldedAt === "object" ? v.foldedAt : {} };
+  } catch { return { opened: [], foldedAt: {} }; }
+}
+
+// The main menu: Overview on top, then one folding section per department. The section you are in is open unless you
+// folded it on this very page, and the others you opened stay open. On a phone the sections are flat, as a bottom bar.
+export function Nav({ top, groups }: { top: Item[]; groups: { title: string; items: Item[] }[] }) {
   const path = usePathname();
+  const current = groups.find((g) => g.items.some((i) => isActive(path, i.href)))?.title;
+  const saved = parse(useSyncExternalStore(subscribe, readRaw, () => ""));
+
+  const isOpen = (title: string) => saved.opened.includes(title) || (title === current && saved.foldedAt[title] !== path);
+  const toggle = (title: string) => {
+    const open = isOpen(title);
+    const next: Saved = open
+      ? { opened: saved.opened.filter((t) => t !== title), foldedAt: title === current ? { ...saved.foldedAt, [title]: path } : saved.foldedAt }
+      : { opened: [...new Set([...saved.opened, title])], foldedAt: Object.fromEntries(Object.entries(saved.foldedAt).filter(([t]) => t !== title)) };
+    try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* not saved: it still works for this visit */ }
+    window.dispatchEvent(new Event(KEY));
+  };
+
+  const link = (i: Item) => (
+    <Link key={i.key} href={i.href} aria-current={isActive(path, i.href) ? "page" : undefined}><Icon name={i.key} />{i.label}</Link>
+  );
   return (
     <nav className="nav" aria-label="Main">
-      {items.map((i) => {
-        const active = i.href === "/" ? path === "/" : path.startsWith(i.href);
+      {top.map(link)}
+      {groups.map((g) => {
+        const open = isOpen(g.title);
+        const id = `nav-${g.title.replace(/\W+/g, "-").toLowerCase()}`;
         return (
-          <Link key={i.key} href={i.href} aria-current={active ? "page" : undefined}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICON[i.key]} /></svg>
-            {i.label}
-          </Link>
+          <div key={g.title} className="nav-group">
+            <button type="button" className="nav-head" aria-expanded={open} aria-controls={id} onClick={() => toggle(g.title)}>
+              <span>{g.title}</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: open ? "rotate(90deg)" : undefined }}><path d="M9 6l6 6-6 6" /></svg>
+            </button>
+            <div id={id} className="nav-items" hidden={!open}>{g.items.map(link)}</div>
+          </div>
         );
       })}
     </nav>

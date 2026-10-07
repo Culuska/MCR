@@ -114,6 +114,10 @@ The local `prisma dev` database drops connections when more than two are open, s
 
 Not built yet: permissions editable per role, two-factor sign-in, "remember me".
 
+## Menu
+
+The sidebar is grouped by department: **Operations** (Projects, Site operations, Equipment, Materials, Subcontracts), **Customers and suppliers**, **Finance** (Expenses, Invoices, Books and statements, Reports), **People** (Attendance, Employees, Payroll) and **Administration** (Settings), with Overview on top. Click a department to fold or open it. The department you are in opens by itself, the ones you open stay open (remembered in this browser), and a department you fold stays folded until you go to another page in it. People only see the departments their role can open. On a phone the menu stays one scrolling bar along the bottom. The grouping is in `src/app/(app)/layout.tsx`.
+
 ## Project-level access
 
 Project Managers and Site Supervisors see **only the projects assigned to them** (plus any project they manage). Every other role sees all projects. In Settings → People and roles, open **Project access** on a person to give them all projects, or limit anyone (a Viewer, an Accountant ...) to chosen projects. A Super Admin always sees everything.

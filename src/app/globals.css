@@ -44,6 +44,12 @@ a:hover { text-decoration: underline; }
 .nav a { display: flex; gap: 10px; align-items: center; padding: 9px 10px; border-radius: 6px; color: var(--side-fg); font-weight: 500; text-decoration: none; }
 .nav a:hover, .nav a[aria-current="page"] { background: var(--side-active); color: #fff; }
 .nav svg { width: 18px; height: 18px; flex: none; }
+.nav-group { display: grid; gap: 2px; margin-top: 8px; }
+.nav-head { display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: 0; cursor: pointer; padding: 6px 10px; color: var(--side-fg); opacity: 0.75; font: 700 11px/1 var(--f-body, inherit); letter-spacing: .09em; text-transform: uppercase; }
+.nav-head:hover { opacity: 1; color: #fff; }
+.nav-head svg { width: 14px; height: 14px; transition: transform .15s; }
+.nav-items { display: grid; gap: 2px; }
+.nav-items[hidden] { display: none; }
 .who { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--side-active); display: grid; gap: 8px; font-size: 12px; }
 .who b { color: #fff; font-size: 13px; }
 .who button { background: none; border: 1px solid var(--side-active); color: var(--side-fg); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
@@ -155,6 +161,8 @@ details.more > .body { padding: 14px; }
   .side { position: fixed; inset: auto 0 0 0; height: auto; z-index: 20; padding: 6px 8px; flex-direction: row; gap: 0; overflow-x: auto; }
   .brand, .who { display: none; }
   .nav { grid-auto-flow: column; grid-auto-columns: minmax(64px, 1fr); width: 100%; }
+  .nav-group, .nav-items, .nav-items[hidden] { display: contents; margin: 0; }
+  .nav-head { display: none; }
   .nav a { flex-direction: column; gap: 2px; font-size: 11px; padding: 6px 4px; text-align: center; }
   main { padding-bottom: 96px; }
   .head h1 { font-size: 28px; }
